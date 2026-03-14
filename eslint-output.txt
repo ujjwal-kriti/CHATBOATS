@@ -1,0 +1,20 @@
+﻿
+C:\Users\Ujjwal kriti\Desktop\chatboat\src\components\DashboardCards.jsx
+  41:49  error  'Icon' is defined but never used   no-unused-vars
+  41:55  error  'color' is defined but never used  no-unused-vars
+
+C:\Users\Ujjwal kriti\Desktop\chatboat\src\components\Sidebar.jsx
+  40:40  error  'Icon' is defined but never used  no-unused-vars
+
+C:\Users\Ujjwal kriti\Desktop\chatboat\src\components\StudentProfileCard.jsx
+  27:33  error  'Icon' is defined but never used  no-unused-vars
+
+C:\Users\Ujjwal kriti\Desktop\chatboat\src\contexts\ThemeContext.jsx
+  46:17  error  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\Ujjwal kriti\Desktop\chatboat\src\pages\Landing.jsx
+   2:10  error  'motion' is defined but never used. Allowed unused vars must match /^[A-Z_]/u          no-unused-vars
+  47:9   error  'steps' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+Γ£û 7 problems (7 errors, 0 warnings)
+

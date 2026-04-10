@@ -44,8 +44,8 @@ export default function ChatbotAssistant() {
         
         // Fetch Student Info & Insights
         const [dashRes, insRes] = await Promise.all([
-          fetch('/api/v1/student/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch('/api/v1/student/insights', { headers: { 'Authorization': `Bearer ${token}` } })
+          fetch('https://chatboats-pexp.onrender.com/api/v1/student/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch('https://chatboats-pexp.onrender.com/api/v1/student/insights', { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
 
         if (dashRes.ok) {
@@ -140,7 +140,7 @@ export default function ChatbotAssistant() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/v1/chatbot/query', {
+      const response = await fetch('https://chatboats-pexp.onrender.com/api/v1/chatbot/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

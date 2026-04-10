@@ -10,7 +10,7 @@ export default function Notifications() {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
-        const dashRes = await fetch('/api/v1/student/dashboard', {
+        const dashRes = await fetch('https://chatboats-pexp.onrender.com/api/v1/student/dashboard', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const dashData = await dashRes.json();

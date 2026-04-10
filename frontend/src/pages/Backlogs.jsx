@@ -16,7 +16,7 @@ export default function Backlogs() {
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : '';
         
         // Fetch Academic Status
-        const statusRes = await fetch(`/api/v1/student/dashboard${queryParams}`, {
+        const statusRes = await fetch(`https://chatboats-pexp.onrender.com/api/v1/student/dashboard${queryParams}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         

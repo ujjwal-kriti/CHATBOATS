@@ -18,8 +18,8 @@ export default function Attendance() {
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : '';
         
         const [attRes, dashRes] = await Promise.all([
-          fetch(`/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
+          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
         
         if (!attRes.ok) throw new Error('Failed to fetch attendance data');

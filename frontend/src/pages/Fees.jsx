@@ -16,7 +16,7 @@ export default function Fees() {
         
         // Fetch Financials
         // Endpoint expected: /api/v1/student/financials
-        const finRes = await fetch(`/api/v1/student/financials${queryParams}`, {
+        const finRes = await fetch(`https://chatboats-pexp.onrender.com/api/v1/student/financials${queryParams}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         

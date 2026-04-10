@@ -235,7 +235,7 @@ app.get('/api/v1/student/dashboard', authenticateToken, async (req, res) => {
         } else {
           // Default to current semester if no target
           if (student) {
-             marks = marks.filter(s => s.semester === student.semester);
+            marks = marks.filter(s => s.semester === student.semester);
           }
         }
         return marks;
@@ -270,7 +270,7 @@ app.get('/api/v1/student/attendance', authenticateToken, async (req, res) => {
     if (targetSemester) {
       const semAtt = data.semesterWise.find(s => s.semester === targetSemester);
       if (semAtt) {
-         overallPercentage = semAtt.attendance.toFixed(1);
+        overallPercentage = semAtt.attendance.toFixed(1);
       }
       // If we have 30 subjects packed in order (5 per sem), filter them
       if (subjectWise.length === 30) {
@@ -340,7 +340,7 @@ app.get('/api/v1/student/performance', authenticateToken, async (req, res) => {
     if (targetSemester) {
       const semPerf = data.semesterWiseCGPA.find(s => s.semester === targetSemester);
       if (semPerf) {
-         currentCGPA = semPerf.sgpa;
+        currentCGPA = semPerf.sgpa;
       }
 
       if (subjectWiseMarks.length === 30) {
@@ -405,7 +405,7 @@ app.get('/api/v1/student/financials', authenticateToken, async (req, res) => {
 app.get('/api/v1/student/insights', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   const targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
-  
+
   try {
     const [insightData, comms, perfData] = await Promise.all([
       Models.Insight.findOne({ regNumber }),
@@ -421,15 +421,15 @@ app.get('/api/v1/student/insights', authenticateToken, async (req, res) => {
     if (targetSemester && perfData) {
       const subjects = perfData.subjectWiseMarks.filter(s => s.semester === targetSemester);
       if (subjects.length > 0) {
-        const sorted = [...subjects].sort((a,b) => b.marks - a.marks);
+        const sorted = [...subjects].sort((a, b) => b.marks - a.marks);
         strong = [sorted[0].subject];
         weak = [sorted[sorted.length - 1].subject];
-        
+
         // Dynamic suggestion based on lowest score
         if (sorted[sorted.length - 1].marks < 60) {
-           suggestions = [`Focus on ${sorted[sorted.length - 1].subject} - score is below 60.`];
+          suggestions = [`Focus on ${sorted[sorted.length - 1].subject} - score is below 60.`];
         } else {
-           suggestions = [`Excellent work in ${sorted[0].subject}! Keep it up.`];
+          suggestions = [`Excellent work in ${sorted[0].subject}! Keep it up.`];
         }
       }
     }
@@ -726,12 +726,12 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         if (semesterToTarget) {
           subjects = subjects.filter(s => s.semester === semesterToTarget);
         }
-        
+
         if (subjects.length > 0) {
-          const sorted = [...subjects].sort((a,b) => b.marks - a.marks);
+          const sorted = [...subjects].sort((a, b) => b.marks - a.marks);
           const strong = sorted[0];
           const weak = sorted[sorted.length - 1];
-          
+
           if (language === 'hi') {
             responseText = `सेमेस्टर ${semesterToTarget} के लिए, ${strong.subject} (${strong.marks}) सबसे मजबूत विषय है और ${weak.subject} (${weak.marks}) में सुधार की आवश्यकता है।`;
           } else if (language === 'te') {
@@ -825,15 +825,15 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         '{pending_amount}': fin?.pendingFees || 0,
         '{fee_status}': fin?.feePaymentStatus || 'N/A',
         '{paid_amount}': (() => {
-           const history = fin?.paymentHistory || [];
-           return history.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+          const history = fin?.paymentHistory || [];
+          return history.reduce((acc, curr) => acc + (curr.amount || 0), 0);
         })(),
         '{total_fees}': (() => {
-           const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
-           const total = (paid + (fin?.pendingFees || 0));
-           // Voice optimization: Convert 75000 to "75 thousand" etc
-           if (total >= 1000) return `${(total/1000).toFixed(0)} thousand`;
-           return total;
+          const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
+          const total = (paid + (fin?.pendingFees || 0));
+          // Voice optimization: Convert 75000 to "75 thousand" etc
+          if (total >= 1000) return `${(total / 1000).toFixed(0)} thousand`;
+          return total;
         })(),
         '{payment_status}': fin?.pendingFees === 0 ? 'Fully Paid' : 'Partial/Pending',
         '{tuition}': '60 thousand',
@@ -841,9 +841,9 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         '{exam}': '3 thousand',
         '{library}': '2 thousand',
         '{total}': (() => {
-           const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
-           const total = (paid + (fin?.pendingFees || 0));
-           return total >= 1000 ? `${(total/1000).toFixed(0)} thousand` : total;
+          const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
+          const total = (paid + (fin?.pendingFees || 0));
+          return total >= 1000 ? `${(total / 1000).toFixed(0)} thousand` : total;
         })(),
         '{status}': fin?.pendingFees === 0 ? 'Paid' : 'Pending',
         '{due_date}': '15th of current month',
@@ -872,7 +872,7 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         '{sem4}': attendance?.semesterWise.find(s => s.semester === 4)?.attendance || 'N/A',
         '{sem5}': attendance?.semesterWise.find(s => s.semester === 5)?.attendance || 'N/A',
         '{sem6}': attendance?.semesterWise.find(s => s.semester === 6)?.attendance || 'N/A',
-        
+
         '{sem1_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 1)?.sgpa || 'N/A',
         '{sem2_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 2)?.sgpa || 'N/A',
         '{sem3_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 3)?.sgpa || 'N/A',
@@ -882,18 +882,18 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
 
         '{subject_marks}': targetSemester ? (perf?.subjectWiseMarks.filter(s => s.semester == targetSemester).map(s => `${s.subject}: ${s.marks}`).join(', ') || 'N/A') : 'N/A',
         '{performance_comment}': 'Analysis of this semester shows steady progress.',
-        
+
         // Performance Sections (Strong/Weak)
         '{weak_subjects}': (() => {
           if (!perf || !perf.subjectWiseMarks || perf.subjectWiseMarks.length === 0) return 'Academic records not found.';
           let subjects = [...perf.subjectWiseMarks];
           const sq = targetSemester || student?.semester;
           let filtered = subjects.filter(s => s.semester == sq);
-          
+
           // Fallback: If no subjects found for specific semester, show all weak ones
           let finalSet = filtered.length > 0 ? filtered : subjects;
-          
-          const weakOnes = finalSet.sort((a,b) => a.marks - b.marks).slice(0, 2);
+
+          const weakOnes = finalSet.sort((a, b) => a.marks - b.marks).slice(0, 2);
           return weakOnes.map(s => `• ${s.subject} (${s.marks} marks)`).join('\n');
         })(),
         '{strong_subjects}': (() => {
@@ -901,11 +901,11 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
           let subjects = [...perf.subjectWiseMarks];
           const sq = targetSemester || student?.semester;
           let filtered = subjects.filter(s => s.semester == sq);
-          
+
           // Fallback: If no subjects found for specific semester, show all strong ones
           let finalSet = filtered.length > 0 ? filtered : subjects;
-          
-          const strongOnes = finalSet.sort((a,b) => b.marks - a.marks).slice(0, 2);
+
+          const strongOnes = finalSet.sort((a, b) => b.marks - a.marks).slice(0, 2);
           return strongOnes.map(s => `• ${s.subject} (Score: ${s.marks}/100)`).join('\n');
         })(),
         '{recommendations}': '1. Join weekend remedial classes.\n2. Review previous year papers.\n3. Schedule a teacher meeting.',
@@ -962,12 +962,12 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         let context = "You are a helpful AI Academic Assistant. Talk to this parent about their child's progress. Be professional and concise. Use the following student data safely. ";
         if (student) {
           context += `Student Name: ${student.name}, Registration ID: ${student.regNumber}, Current Semester: ${student.semester}, Branch: ${student.branch}. `;
-          
+
           if (attendance) {
             context += `Overall Attendance: ${attendance.overallPercentage}%. `;
             context += "Semester-wise Attendance: " + (attendance.semesterWise || []).map(s => `Sem ${s.semester}: ${s.attendance.toFixed(1)}%`).join(', ') + ". ";
           }
-          
+
           if (perf) {
             context += `Current CGPA: ${perf.currentCGPA}. `;
             context += "Semester-wise SGPA: " + (perf.semesterWiseCGPA || []).map(s => `Sem ${s.semester}: ${s.sgpa}`).join(', ') + ". ";
@@ -979,11 +979,11 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
           if (intra) {
             context += "Intra-Semester (Mid-term) Marks: " + (intra.marks || []).map(m => `${m.subject}: Mid1=${m.m1}, Mid2=${m.m2}, Total=${m.total}`).join(', ') + ". ";
           }
-          
+
           if (acStatus) {
             context += `Backlogs: ${acStatus.numberOfBacklogs}. Subjects involved: ${acStatus.repeatedSubjects?.join(', ') || 'None'}. `;
           }
-          
+
           if (fin) {
             context += `Fee Status: ${fin.feePaymentStatus}, Pending Balance: ₹${fin.pendingFees}. Scholarship: ${fin.scholarshipStatus}. `;
           }

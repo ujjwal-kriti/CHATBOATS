@@ -26,7 +26,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post('/api/v1/auth/verify-reg', { regNumber })
+      const res = await axios.post('https://chatboats-pexp.onrender.com/api/v1/auth/verify-reg', { regNumber })
       if (res.data.success) setStep(2)
     } catch (err) {
       setError(err.response?.data?.error || 'Registration number not found')
@@ -40,7 +40,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post('/api/v1/auth/verify-phone', { regNumber, parentPhone })
+      const res = await axios.post('https://chatboats-pexp.onrender.com/api/v1/auth/verify-phone', { regNumber, parentPhone })
       if (res.data.success) setStep(3)
     } catch (err) {
       setError(err.response?.data?.error || 'Phone number mismatch')
@@ -54,7 +54,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post('/api/v1/auth/verify-otp', { regNumber, parentPhone, otp })
+      const res = await axios.post('https://chatboats-pexp.onrender.com/api/v1/auth/verify-otp', { regNumber, parentPhone, otp })
       localStorage.setItem('token', res.data.token)
       localStorage.setItem('auth', JSON.stringify(res.data.student))
       navigate('/dashboard')

@@ -236,7 +236,7 @@ export default function Chatbot() {
     
     try {
       const token = localStorage.getItem('token')
-      const res = await fetch('/api/v1/chatbot/query', {
+      const res = await fetch('https://chatboats-pexp.onrender.com/api/v1/chatbot/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -278,7 +278,7 @@ export default function Chatbot() {
 
     try {
       const token = localStorage.getItem('token')
-      const res = await fetch('/api/v1/chatbot/query', {
+      const res = await fetch('https://chatboats-pexp.onrender.com/api/v1/chatbot/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

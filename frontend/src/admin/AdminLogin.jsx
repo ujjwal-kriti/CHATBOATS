@@ -16,7 +16,7 @@ const AdminLogin = () => {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/api/v1/admin/login', { email, password });
+      const response = await axios.post('https://chatboats-pexp.onrender.com/api/v1/admin/login', { email, password });
       
       if (response.data.success) {
         localStorage.setItem('adminToken', response.data.token);

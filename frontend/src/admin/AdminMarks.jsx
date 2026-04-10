@@ -25,7 +25,7 @@ const AdminMarks = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await axios.get('http://localhost:5000/api/v1/admin/students', {
+      const response = await axios.get('https://chatboats-pexp.onrender.com/api/v1/admin/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data);
@@ -38,7 +38,7 @@ const AdminMarks = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await axios.get(`http://localhost:5000/api/v1/admin/marks/${regNumber}`, {
+      const response = await axios.get(`https://chatboats-pexp.onrender.com/api/v1/admin/marks/${regNumber}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMarks(response.data.length > 0 ? response.data : [
@@ -72,7 +72,7 @@ const AdminMarks = () => {
     setSaveLoading(true);
     const token = localStorage.getItem('adminToken');
     try {
-      await axios.post('http://localhost:5000/api/v1/admin/marks/update', {
+      await axios.post('https://chatboats-pexp.onrender.com/api/v1/admin/marks/update', {
         regNumber: selectedStudent.regNumber,
         marks: marks
       }, {

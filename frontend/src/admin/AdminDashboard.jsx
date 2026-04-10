@@ -36,7 +36,7 @@ const AdminDashboard = () => {
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem('adminToken');
-        const response = await axios.get('http://localhost:5000/api/v1/admin/students', {
+        const response = await axios.get('https://chatboats-pexp.onrender.com/api/v1/admin/students', {
           headers: { Authorization: `Bearer ${token}` }
         });
         

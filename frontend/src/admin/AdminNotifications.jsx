@@ -21,7 +21,7 @@ const AdminNotifications = () => {
     const fetchStudents = async () => {
       try {
         const token = localStorage.getItem('adminToken');
-        const response = await axios.get('https://chatboats-pexp.onrender.com/api/v1/admin/students', {
+        const response = await axios.get('/api/v1/admin/students', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStudents(response.data);
@@ -57,7 +57,7 @@ const AdminNotifications = () => {
     setLoading(true);
     const token = localStorage.getItem('adminToken');
     try {
-      await axios.post('https://chatboats-pexp.onrender.com/api/v1/admin/send-exam-notification', {
+      await axios.post('/api/v1/admin/send-exam-notification', {
         regNumbers: selectedRegs,
         message
       }, {

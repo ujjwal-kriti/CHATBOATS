@@ -118,16 +118,17 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
 
     // Send OTP via Email if available
     if (student.email) {
-      await sendEmailNotification(
+      // Don't await email sending to avoid blocking the response (improves speed)
+      sendEmailNotification(
         student.email,
         'Your Secure Login OTP',
         `Hello ${student.name},\n\nYour one-time password (OTP) for the Academic Monitoring System is: ${generatedOtp}\n\nThis OTP is valid for 5 minutes. Please do not share this code with anyone.\n\nRegards,\nSecurity Team`
-      );
+      ).catch(err => console.error('Email failed in background:', err));
     }
 
     res.json({
       success: true,
-      message: `OTP sent successfully to your registered email (${student.email || 'N/A'}) and mobile number.`
+      message: `OTP sent successfully to ${student.email || 'your registered email'}. Please check your inbox (and spam folder).`
     });
 
   } catch (err) {

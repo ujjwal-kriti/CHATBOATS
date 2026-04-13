@@ -21,11 +21,11 @@ export default function Dashboard() {
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : ''
 
         const [res, attRes, perfRes, finRes, insRes] = await Promise.all([
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/financials${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
+          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/financials${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
 
         if (!res.ok) throw new Error('Failed to fetch dashboard data')

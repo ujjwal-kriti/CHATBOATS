@@ -1,8 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import axios from 'axios'
 import './index.css'
 import App from './App.jsx'
 import { ThemeProvider } from './contexts/ThemeContext'
+
+// Set global base URL for production while allowing Vite proxy during local development
+axios.defaults.baseURL = import.meta.env.MODE === 'production' ? 'https://chatboats-pexp.onrender.com' : ''
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

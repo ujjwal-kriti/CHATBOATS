@@ -25,9 +25,9 @@ export default function AcademicPerformance() {
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : '';
         
         const [perfRes, dashRes, insRes] = await Promise.all([
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`https://chatboats-pexp.onrender.com/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
+          fetch(`/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
         
         if (!perfRes.ok) throw new Error('Failed to fetch performance data');

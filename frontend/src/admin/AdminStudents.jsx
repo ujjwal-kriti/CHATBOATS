@@ -40,7 +40,7 @@ const AdminStudents = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await axios.get('https://chatboats-pexp.onrender.com/api/v1/admin/students', {
+      const response = await axios.get('/api/v1/admin/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data);
@@ -67,11 +67,11 @@ const AdminStudents = () => {
     const token = localStorage.getItem('adminToken');
     try {
       if (editMode) {
-        await axios.put(`https://chatboats-pexp.onrender.com/api/v1/admin/students/update/${selectedStudent._id}`, formData, {
+        await axios.put(`/api/v1/admin/students/update/${selectedStudent._id}`, formData, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } else {
-        await axios.post('https://chatboats-pexp.onrender.com/api/v1/admin/students/add', formData, {
+        await axios.post('/api/v1/admin/students/add', formData, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
@@ -113,7 +113,7 @@ const AdminStudents = () => {
     setAlertLoading(prev => ({ ...prev, [regNumber]: true }));
     const token = localStorage.getItem('adminToken');
     try {
-      await axios.post('https://chatboats-pexp.onrender.com/api/v1/admin/send-attendance-alert', { regNumber }, {
+      await axios.post('/api/v1/admin/send-attendance-alert', { regNumber }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Attendance alert sent successfully');
@@ -129,7 +129,7 @@ const AdminStudents = () => {
     
     const token = localStorage.getItem('adminToken');
     try {
-      await axios.delete(`https://chatboats-pexp.onrender.com/api/v1/admin/students/${id}`, {
+      await axios.delete(`/api/v1/admin/students/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchStudents();

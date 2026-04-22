@@ -1,0 +1,9 @@
+﻿[dotenv@17.3.1] injecting env (4) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ≡ƒöÉ prevent committing .env to code: https://dotenvx.com/precommit
+Connected to MongoDB Atlas
+Sem 1: Math-I, English, Physics, Programming, Discrete Math
+Sem 2: Physics-II, Chemistry, Math-II, C Programming, Graphics
+Sem 3: Data Structures, DAA, COA, Python, Digital Logic
+Sem 4: Algorithms, Java, OS, Flat, Microprocessors
+Sem 5: Operating Systems, DBMS, Web Tech, Java Prog, Soft Eng.
+Sem 6: Machine Learning, Big Data, Cloud Computing, Cyber Security, DevOps

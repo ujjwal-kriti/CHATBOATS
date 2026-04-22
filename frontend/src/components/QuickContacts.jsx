@@ -10,11 +10,11 @@ export default function QuickContacts() {
       icon: User2,
     },
     {
-      role: 'Academic Office',
-      name: 'Student Support Desk',
-      phone: '+1 (555) 987-6543',
-      email: 'support@university.edu',
-      icon: Building2,
+      role: 'Child Counsellor',
+      name: 'Dr. Emily Watson',
+      phone: '+1 (555) 234-5678',
+      email: 'e.watson@university.edu',
+      icon: User2,
     }
   ];
 

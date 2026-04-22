@@ -16,7 +16,15 @@ export default function AcademicPerformance() {
   const [intraMarks, setIntraMarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const { selectedSemester } = useSemester();
+  const { selectedSemester, setSelectedSemester } = useSemester();
+
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem || sem === 'all') return 'Overall Summary';
+    const year = Math.ceil(sem / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${sem}`;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,23 +32,16 @@ export default function AcademicPerformance() {
         const token = localStorage.getItem('token');
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : '';
         
-        const [perfRes, dashRes, insRes] = await Promise.all([
-          fetch(`/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
+        const res = await fetch(`/api/v1/student/dashboard${queryParams}`, { 
+          headers: { 'Authorization': `Bearer ${token}` } 
+        });
         
-        if (!perfRes.ok) throw new Error('Failed to fetch performance data');
-        
-        const [perfData, dashData, insData] = await Promise.all([
-          perfRes.json(),
-          dashRes.json(),
-          insRes.json()
-        ]);
+        if (!res.ok) throw new Error('Failed to fetch data');
+        const dashData = await res.json();
 
-        setPerformance(perfData);
+        setPerformance(dashData.performance);
         setStudent(dashData.student);
-        setInsights(insData.insights);
+        setInsights(dashData.insights);
         setIntraMarks(dashData.intraMarks || []);
       } catch (err) {
         setError(err.message);
@@ -92,7 +93,7 @@ export default function AcademicPerformance() {
       doc.text('Semester-wise CGPA Trend', 20, 85);
       
       const cgpaBody = (performance.semesterWiseCGPA || []).map(s => [
-        `Semester ${s.semester}`,
+        `${getSemesterLabel(s.semester)}`,
         s.sgpa.toFixed(2)
       ]);
 
@@ -167,7 +168,7 @@ export default function AcademicPerformance() {
   );
 
   const chartData = (performance.semesterWiseCGPA || []).map(s => ({
-    name: `Sem ${s.semester}`,
+    name: getSemesterLabel(s.semester).replace(' Year - ', ' '),
     gpa: s.sgpa
   }));
 
@@ -178,22 +179,38 @@ export default function AcademicPerformance() {
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Header */}
+      {/* Header & Filter */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
+        <div className="flex-1">
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Academic <span className="text-indigo-600">Performance</span></h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">Detailed grade analysis and CGPA progression</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium italic underline decoration-indigo-500/30 decoration-2 underline-offset-4">Comprehensive assessment of internal and external performance</p>
         </div>
         
-        <button
-          onClick={exportPDF}
-          className="flex items-center justify-center gap-3 px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-700 hover:to-blue-800 text-white rounded-2xl shadow-xl shadow-indigo-500/20 transition-all transform hover:-translate-y-1 active:scale-95 group"
-        >
-          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center group-hover:rotate-12 transition-transform">
-            <FileDown className="w-5 h-5" />
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3 bg-white dark:bg-gray-800 p-1.5 rounded-2xl border border-slate-200 dark:border-gray-700 shadow-sm">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-3">View For:</span>
+            <select
+              value={selectedSemester}
+              onChange={(e) => setSelectedSemester(e.target.value)}
+              className="bg-slate-50 dark:bg-gray-900 text-slate-900 dark:text-white text-xs font-black uppercase tracking-tight py-2 px-4 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+            >
+              <option value="all">ALL SEMSTERS SUMMARY</option>
+              {[1, 2, 3, 4, 5, 6].map(s => (
+                <option key={s} value={s.toString()}>{getSemesterLabel(s).toUpperCase()}</option>
+              ))}
+            </select>
           </div>
-          <span className="font-bold tracking-tight text-sm">Export Performance PDF</span>
-        </button>
+
+          <button
+            onClick={exportPDF}
+            className="flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-700 hover:to-blue-800 text-white rounded-2xl shadow-xl shadow-indigo-500/20 transition-all transform hover:-translate-y-1 active:scale-95 group"
+          >
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center group-hover:rotate-12 transition-transform">
+              <FileDown className="w-5 h-5" />
+            </div>
+            <span className="font-bold tracking-tight text-sm">Export PDF</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -262,7 +279,7 @@ export default function AcademicPerformance() {
       <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-[2.5rem] p-8 shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">
-             {selectedSemester && selectedSemester !== 'all' ? `Semester ${selectedSemester} Subject Marks` : 'Semester-wise CGPA Trend'}
+             {selectedSemester && selectedSemester !== 'all' ? `${getSemesterLabel(selectedSemester)} Subject Marks` : 'Semester-wise CGPA Trend'}
           </h3>
           <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-full">
             <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
@@ -378,18 +395,20 @@ export default function AcademicPerformance() {
         </div>
       </div>
 
-      {/* Intra Semester Marks Section */}
-      <div className="space-y-4">
-        <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight ml-2">Internal Assessment Progress</h3>
-        <IntraSemesterMarks marks={intraMarks} />
-      </div>
+      {/* Intra Semester Marks Section - Only visible when a specific semester is selected */}
+      {selectedSemester !== 'all' && (
+        <div className="space-y-4">
+          <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight ml-2">Internal Assessment Progress</h3>
+          <IntraSemesterMarks marks={intraMarks} />
+        </div>
+      )}
 
       {/* Marks Table */}
       <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-[2.5rem] overflow-hidden shadow-sm">
         <div className="p-8 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/20">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Subject-wise Performance Breakdown</h3>
-            <span className="px-4 py-1.5 bg-indigo-600 rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20">Sem {selectedSemester !== 'all' && selectedSemester ? selectedSemester : (student?.semester || 'Current')} Stats</span>
+            <span className="px-4 py-1.5 bg-indigo-600 rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20">{getSemesterLabel(selectedSemester !== 'all' && selectedSemester ? selectedSemester : (student?.semester || 'Current'))} Stats</span>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -404,32 +423,99 @@ export default function AcademicPerformance() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-gray-700">
-              {performance.subjectWiseMarks.map((s, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-gray-700/30 transition-colors group">
-                  <td className="px-8 py-6">
-                    <span className="block font-bold text-slate-800 dark:text-gray-100 group-hover:text-indigo-600 transition-colors uppercase text-sm tracking-tight">{s.subject}</span>
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase mt-1">Theory + Lab</span>
-                  </td>
-                  <td className="px-6 py-6 text-center">
-                    <span className="text-sm font-black text-slate-600 dark:text-gray-400">{Math.floor(s.marks * 0.3)}</span>
-                  </td>
-                  <td className="px-6 py-6 text-center">
-                    <span className="text-sm font-black text-slate-600 dark:text-gray-400">{Math.floor(s.marks * 0.7)}</span>
-                  </td>
-                  <td className="px-6 py-6 text-center">
-                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900 text-white font-black text-xs shadow-inner">
-                      {s.marks}
-                    </div>
-                  </td>
-                  <td className="px-6 py-6 text-center">
-                    <span className={`inline-flex min-w-[32px] justify-center px-2 py-1 rounded-lg text-xs font-black ${
-                      s.marks >= 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'
-                    }`}>
-                      {s.grade}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {performance.subjectWiseMarks.map((s, idx) => {
+                const isSemRow = s.subject.startsWith('Semester');
+                const semNum = isSemRow ? s.subject.split(' ')[1] : null;
+
+                // Real Calculation Logic
+                const getInternalScore = () => {
+                   if (!intraMarks || !intraMarks.subjects || !intraMarks.exams) return Math.floor(s.marks * 0.3);
+                   
+                   const subjectIndex = intraMarks.subjects.indexOf(s.subject);
+                   if (subjectIndex === -1) return Math.floor(s.marks * 0.3);
+
+                   const m1Marks = intraMarks.exams
+                     .filter(e => e.title.toLowerCase().includes('module1'))
+                     .map(e => e.marks[subjectIndex])
+                     .filter(m => typeof m === 'number' && m !== -1);
+
+                   const m2Marks = intraMarks.exams
+                     .filter(e => e.title.toLowerCase().includes('module2'))
+                     .map(e => e.marks[subjectIndex])
+                     .filter(m => typeof m === 'number' && m !== -1);
+
+                   if (m1Marks.length === 0 && m2Marks.length === 0) return Math.floor(s.marks * 0.3);
+
+                   const m1Avg = m1Marks.length > 0 ? (m1Marks.reduce((a, b) => a + b, 0) / m1Marks.length) : 0;
+                   const m2Avg = m2Marks.length > 0 ? (m2Marks.reduce((a, b) => a + b, 0) / m2Marks.length) : 0;
+                   
+                   // Assuming each module is out of 15 (Total 30)
+                   // If seeded marks are out of 20, we scale: (Avg / 20) * 15
+                   const m1Score = (m1Avg / 20) * 15;
+                   const m2Score = (m2Avg / 20) * 15;
+                   
+                   return Math.round(m1Score + m2Score);
+                };
+
+                const currentInternal = isSemRow ? Math.floor(s.marks * 0.3) : getInternalScore();
+                const currentExternal = isSemRow ? Math.floor(s.marks * 0.7) : (s.externalMarks || 0);
+                const currentTotal = isSemRow ? s.marks : (currentInternal + currentExternal);
+                
+                const getGrade = (score) => {
+                  if (score >= 90) return 'O';
+                  if (score >= 80) return 'A';
+                  if (score >= 70) return 'B';
+                  if (score >= 60) return 'C';
+                  if (score >= 50) return 'D';
+                  return 'F';
+                };
+
+                const currentGrade = isSemRow ? s.grade : getGrade(currentTotal);
+
+                return (
+                  <tr 
+                    key={idx} 
+                    onClick={() => isSemRow && setSelectedSemester(semNum)}
+                    className={`${isSemRow ? 'cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20' : 'hover:bg-slate-50/50 dark:hover:bg-gray-700/30'} transition-all group`}
+                  >
+                    <td className="px-8 py-6">
+                      <div className="flex items-center justify-between">
+                         <div>
+                            <span className={`block font-bold transition-colors uppercase text-sm tracking-tight ${isSemRow ? 'text-indigo-600 dark:text-indigo-400 font-black' : 'text-slate-800 dark:text-gray-100 group-hover:text-indigo-600'}`}>
+                              {s.subject}
+                            </span>
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase mt-1 italic tracking-widest">
+                              {isSemRow ? 'Click to view detailed internal marks' : 'Theory + Lab Assessment'}
+                            </span>
+                         </div>
+                         {isSemRow && (
+                           <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <TrendingUp className="w-4 h-4 text-indigo-600" />
+                           </div>
+                         )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-6 text-center">
+                      <span className="text-sm font-black text-slate-600 dark:text-gray-400">{currentInternal}</span>
+                    </td>
+                    <td className="px-6 py-6 text-center">
+                      <span className="text-sm font-black text-slate-600 dark:text-gray-400">{currentExternal}</span>
+                    </td>
+                    <td className="px-6 py-6 text-center">
+                      <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900 text-white font-black text-xs shadow-inner">
+                        {currentTotal}
+                      </div>
+                    </td>
+                    <td className="px-6 py-6 text-center">
+                      <span className={`inline-flex min-w-[32px] justify-center px-2 py-1 rounded-lg text-xs font-black ${
+                        currentTotal >= 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'
+                      }`}>
+                        {currentGrade}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

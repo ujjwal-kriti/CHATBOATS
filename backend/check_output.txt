@@ -1,0 +1,9 @@
+﻿[dotenv@17.3.1] injecting env (4) from .env -- tip: ΓÜÖ∩╕Å  write to custom object with { processEnv: myObject }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ≡ƒöÉ prevent building .env in docker: https://dotenvx.com/prebuild
+Connected to MongoDB Atlas
+Sem 1: Mathematics I, Physics I, Chemistry, Engineering Graphics, Computer Programming
+Sem 2: Mathematics II, Physics II, Data Structures, Basic Electrical, Environmental Science
+Sem 3: DBMS, Discrete Math, DLD, Web Technologies, Software Engineering
+Sem 4: Algorithms, Operating Systems, Computer Networks, Automata Theory, Microprocessors
+Sem 5: Machine Learning, Compiler Design, Cyber Security, Cloud Computing, Data Analytics
+Sem 6: Artificial Intelligence, Blockchain, Deep Learning, Software Testing, IOT

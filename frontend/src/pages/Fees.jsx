@@ -8,6 +8,16 @@ export default function Fees() {
   const [error, setError] = useState('');
   const { selectedSemester } = useSemester();
 
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem || sem === 'all') return 'Overall Summary';
+    const num = parseInt(sem);
+    if (isNaN(num)) return sem;
+    const year = Math.ceil(num / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${num}`;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -78,7 +88,9 @@ export default function Fees() {
               <Wallet className="w-6 h-6 text-slate-600 dark:text-gray-300" />
             </div>
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Fees</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                {selectedSemester && selectedSemester !== 'all' ? `${getSemesterLabel(selectedSemester)} Fees` : 'Total Fees'}
+              </p>
               <p className="text-2xl font-black text-slate-900 dark:text-white">
                 ₹{totalFees.toLocaleString()}
               </p>
@@ -116,7 +128,7 @@ export default function Fees() {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending</p>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending ({getSemesterLabel(financials?.lastPaymentSemester || 6).replace(' Year - ', ' Yr ')})</p>
               <p className={`text-3xl font-black ${
                 !isFullyPaid ? 'text-amber-600 dark:text-amber-500' : 'text-slate-900 dark:text-white'
               }`}>
@@ -138,8 +150,54 @@ export default function Fees() {
         </div>
       </div>
 
+      {/* Semester Breakdown Table */}
+      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-[2rem] overflow-hidden shadow-sm">
+        <div className="p-6 md:p-8 border-b border-slate-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-900/20 flex justify-between items-center">
+          <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+            <Activity className="w-5 h-5 text-indigo-500" />
+             Semester-wise Summary
+          </h3>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic tracking-tight">📊 Filtered by Selection</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-gray-900/50 border-b border-slate-100 dark:border-gray-800">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-[10px]">Semester</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-[10px]">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-[10px]">Paid Amount</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-[10px]">Pending</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-[10px]">Last Payment Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-gray-700">
+              {(financials?.semesterWiseFees || [])
+                .filter(s => (selectedSemester && selectedSemester !== 'all') ? s.semester === parseInt(selectedSemester) : true)
+                .map((s, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-gray-700/30 transition-colors">
+                  <td className="px-6 py-5 font-bold text-slate-900 dark:text-white">{getSemesterLabel(s.semester)}</td>
+                  <td className="px-6 py-5">
+                    <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                      s.status === 'Paid' 
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    }`}>
+                      {s.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-5 font-black text-slate-900 dark:text-white">₹{(s.paid || 0).toLocaleString()}</td>
+                  <td className="px-6 py-5 font-black text-amber-600 dark:text-amber-500">₹{(s.pending || 0).toLocaleString()}</td>
+                  <td className="px-6 py-5 font-bold text-slate-600 dark:text-slate-400 text-sm">
+                    {s.lastPaymentDate ? new Date(s.lastPaymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric'}) : '--'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
         {/* Left Area (Payment Status + History) */}
         <div className="lg:col-span-2 space-y-8">
            
@@ -202,6 +260,7 @@ export default function Fees() {
                        <thead>
                           <tr className="bg-slate-50 dark:bg-gray-900/50 border-b border-slate-100 dark:border-gray-800">
                              <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Semester</th>
                              <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
                              <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Receipt / Method</th>
                              <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
@@ -212,6 +271,11 @@ export default function Fees() {
                              <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-gray-700/30 transition-colors">
                                 <td className="px-6 py-5">
                                    <span className="font-bold text-slate-800 dark:text-gray-200 block text-sm">{new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric'})}</span>
+                                </td>
+                                <td className="px-6 py-5">
+                                    <span className="inline-flex px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase">
+                                       {p.semester ? getSemesterLabel(p.semester).replace(' Year - ', ' ') : '-'}
+                                    </span>
                                 </td>
                                 <td className="px-6 py-5">
                                    <span className="font-black text-slate-900 dark:text-white">₹{p.amount.toLocaleString()}</span>

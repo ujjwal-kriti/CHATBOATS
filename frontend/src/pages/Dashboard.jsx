@@ -14,40 +14,41 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const { selectedSemester, setSelectedSemester } = useSemester()
 
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem || sem === 'all') return 'Overall Summary';
+    const year = Math.ceil(sem / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${sem}`;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token')
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : ''
 
-        const [res, attRes, perfRes, finRes, insRes] = await Promise.all([
-          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/performance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/financials${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/insights${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
+        const res = await fetch(`/api/v1/student/dashboard${queryParams}`, { 
+          headers: { 'Authorization': `Bearer ${token}` } 
+        });
 
         if (!res.ok) throw new Error('Failed to fetch dashboard data')
-
         const dashboardData = await res.json()
+
         if (!selectedSemester) {
           setSelectedSemester(dashboardData.student.semester)
         }
 
-        const [attendanceData, perfData, finData, insightsData] = await Promise.all([
-          attRes.ok ? attRes.json() : null,
-          perfRes.ok ? perfRes.json() : null,
-          finRes.ok ? finRes.json() : null,
-          insRes.ok ? insRes.json() : null
-        ]);
+        const perfData = dashboardData.performance;
+        const financials = dashboardData.financials;
+        const insightsData = dashboardData.insights;
 
         const subjectList = perfData ? perfData.subjectWiseMarks : [];
         let dynStrong = "N/A";
         let dynWeak = "N/A";
         let dynSuggestion = "No insights available.";
 
-        if (subjectList && subjectList.length > 0) {
+        if (subjectList && subjectList.length > 0 && selectedSemester !== 'all') {
           const sorted = [...subjectList].sort((a, b) => b.marks - a.marks);
           dynStrong = sorted[0].subject.split(' (Sem')[0] || sorted[0].subject;
           dynWeak = sorted[sorted.length - 1].subject.split(' (Sem')[0] || sorted[sorted.length - 1].subject;
@@ -57,10 +58,10 @@ export default function Dashboard() {
           } else {
             dynSuggestion = `Excellent work in ${dynStrong}! Keep up the consistent effort.`;
           }
-        } else if (insightsData && insightsData.insights) {
-          dynStrong = insightsData.insights.strongSubjects[0] || "N/A";
-          dynWeak = insightsData.insights.weakSubjects[0] || "N/A";
-          dynSuggestion = insightsData.insights.improvementSuggestions[0] || "Maintain consistency.";
+        } else if (insightsData) {
+          dynStrong = insightsData.strongSubjects?.[0] || "N/A";
+          dynWeak = insightsData.weakSubjects?.[0] || "N/A";
+          dynSuggestion = insightsData.improvementSuggestions?.[0] || "Maintain consistency.";
         }
 
         // Construct final data format expected by components
@@ -69,8 +70,8 @@ export default function Dashboard() {
             name: dashboardData.student.name,
             registrationNumber: dashboardData.student.regNumber,
             department: dashboardData.student.branch,
-            year: selectedSemester === 'all' ? 'Overall' : `Semester ${selectedSemester || dashboardData.student.semester}`,
-            section: "N/A",
+            year: selectedSemester === 'all' ? 'Overall' : getSemesterLabel(selectedSemester || dashboardData.student.semester),
+            section: "A",
             parentPhone: dashboardData.student.phone || "N/A",
             maxSemester: dashboardData.student.semester
           },
@@ -78,13 +79,13 @@ export default function Dashboard() {
             attendancePercentage: dashboardData.attendance?.overallPercentage || 0,
             cgpa: dashboardData.performance?.currentCGPA || 0,
             backlogsCount: dashboardData.academicStatus?.numberOfBacklogs || 0,
-            pendingFees: finData ? finData.pendingFees.toString() : '0',
+            pendingFees: financials ? financials.pendingFees.toString() : '0',
           },
-          attendanceData: attendanceData ? attendanceData.subjectWise : [],
+          attendanceData: dashboardData.attendance?.subjectWise || [],
           subjectMarks: perfData ? perfData.subjectWiseMarks : [],
-          alerts: dashboardData.notifications.map((n, idx) => ({
+          alerts: (dashboardData.notifications || []).map((n, idx) => ({
             id: n.id,
-            type: idx % 2 === 0 ? "attendance" : "exam", // simple mock logic for alerts
+            type: idx % 2 === 0 ? "attendance" : "exam",
             title: "Notification",
             message: (n.upcomingExams[0] || n.assignmentDeadlines[0] || dashboardData.attendance?.lowAttendanceAlerts[0] || 'Update received'),
             date: new Date().toISOString().split('T')[0]
@@ -120,13 +121,13 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">Select Semester:</label>
           <select
-            className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all cursor-pointer"
             value={selectedSemester}
             onChange={(e) => setSelectedSemester(e.target.value)}
           >
             <option value="all">Overall Summary</option>
             {semesterOptions.map(sem => (
-              <option key={sem} value={sem}>Semester {sem}</option>
+              <option key={sem} value={sem}>{getSemesterLabel(sem)}</option>
             ))}
           </select>
         </div>

@@ -3,6 +3,7 @@ import { FileDown, Calendar, CheckCircle2, XCircle, AlertCircle, Loader2, Chevro
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useSemester } from '../context/SemesterContext';
+import DailyAttendanceLog from '../components/DailyAttendanceLog';
 
 export default function Attendance() {
   const [data, setData] = useState(null);
@@ -11,25 +12,28 @@ export default function Attendance() {
   const [error, setError] = useState('');
   const { selectedSemester } = useSemester();
 
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem || sem === 'all') return 'Overall Summary';
+    const year = Math.ceil(sem / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${sem}`;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
         const queryParams = selectedSemester && selectedSemester !== 'all' ? `?semester=${selectedSemester}` : '';
         
-        const [attRes, dashRes] = await Promise.all([
-          fetch(`/api/v1/student/attendance${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`/api/v1/student/dashboard${queryParams}`, { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
+        const res = await fetch(`/api/v1/student/dashboard${queryParams}`, { 
+          headers: { 'Authorization': `Bearer ${token}` } 
+        });
         
-        if (!attRes.ok) throw new Error('Failed to fetch attendance data');
-        
-        const [attData, dashData] = await Promise.all([
-          attRes.json(),
-          dashRes.json()
-        ]);
+        if (!res.ok) throw new Error('Failed to fetch data');
+        const dashData = await res.json();
 
-        setData(attData);
+        setData(dashData.attendance);
         setStudent(dashData.student);
       } catch (err) {
         setError(err.message);
@@ -72,7 +76,7 @@ export default function Attendance() {
         `Name: ${student.name || 'N/A'}`,
         `Registration Number: ${student.regNumber || 'N/A'}`,
         `Department: ${student.branch || 'N/A'}`,
-        `Semester: ${student.semester || 'N/A'}`
+        `Year/Sem: ${getSemesterLabel(student.semester || 'N/A')}`
       ], 20, 55);
 
       // 2. Overall Attendance
@@ -125,7 +129,7 @@ export default function Attendance() {
       doc.text('Semester-wise History', 20, startY4);
 
       const semBody = (data.semesterWise || []).map(s => [
-        `Semester ${s.semester}`,
+        `${getSemesterLabel(s.semester)}`,
         `${s.attendance}%`
       ]);
 
@@ -303,6 +307,9 @@ export default function Attendance() {
         </div>
       </div>
 
+      {/* Daily Hour-wise Log */}
+      <DailyAttendanceLog activeSemester={selectedSemester} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Semester-wise History */}
         <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-[2rem] p-6 shadow-sm">
@@ -314,7 +321,7 @@ export default function Attendance() {
                   <div className="w-10 h-10 rounded-xl bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center font-black text-slate-400">
                     {sem.semester}
                   </div>
-                  <span className="font-bold text-slate-700 dark:text-gray-300">Semester {sem.semester}</span>
+                  <span className="font-bold text-slate-700 dark:text-gray-300">{getSemesterLabel(sem.semester)}</span>
                 </div>
                 <div className="flex items-center gap-6">
                   <span className="text-sm font-black text-blue-600">{sem.attendance}%</span>

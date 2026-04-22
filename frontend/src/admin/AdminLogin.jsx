@@ -85,6 +85,14 @@ const AdminLogin = () => {
           >
             {loading ? <Loader2 className="animate-spin" size={20} /> : 'Secure Login'}
           </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium py-3 rounded-lg transition-all"
+          >
+            Back to Student Login
+          </button>
         </form>
 
         <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 text-center">

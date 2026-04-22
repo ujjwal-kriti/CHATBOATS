@@ -46,9 +46,9 @@ export default function Notifications() {
   ];
 
   const calendarUpdates = [
-    { title: 'Mid Semester Exams', description: 'Begin from April 10, check schedule.', icon: Calendar, color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
-    { title: 'Summer Internship', description: 'Registration open for 3rd year students.', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-    { title: 'Semester Break', description: 'Begins May 20, campus hostels closed.', icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' }
+    { title: 'Mid Semester Exams', description: 'Begin from April 10, check schedule for 2nd and 3rd Year.', icon: Calendar, color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
+    { title: 'Summer Internship', description: 'Registration open for 3rd Year (Sem 5 & 6) students.', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+    { title: 'Academic Break', description: '1st Year Semester 2 break begins May 20.', icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' }
   ];
 
   const campusAnnouncements = [

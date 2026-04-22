@@ -1,10 +1,20 @@
 import { User, Hash, Building2, GraduationCap, BookOpen, Phone, MapPin, BadgeCheck } from 'lucide-react'
 
 export default function StudentProfileCard({ student }) {
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem) return 'N/A';
+    const num = parseInt(sem);
+    if (isNaN(num)) return sem;
+    const year = Math.ceil(num / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${num}`;
+  };
+
   const details = [
     { icon: Hash, label: 'Reg ID', value: student.registrationNumber, color: 'text-blue-400' },
     { icon: Building2, label: 'Dept', value: student.department || 'CSE', color: 'text-indigo-400' },
-    { icon: GraduationCap, label: 'Year', value: student.year || 'Sem 6', color: 'text-violet-400' },
+    { icon: GraduationCap, label: 'Academic', value: getSemesterLabel(student.semester || 6), color: 'text-violet-400' },
     { icon: BookOpen, label: 'Sec', value: student.section || 'A', color: 'text-emerald-400' },
     { icon: Phone, label: 'Parent', value: student.parentPhone || 'N/A', color: 'text-rose-400' },
   ]

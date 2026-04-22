@@ -18,6 +18,7 @@ initCronJobs();
 // Initialize NLP Manager
 const manager = new NlpManager({ languages: ['en', 'hi', 'te'], forceNER: true });
 manager.load('./model.nlp');
+// Force reload after training nlp v2
 
 // Initialize in-memory cache for OTPs with a standard TTL of 300 seconds (5 minutes)
 const otpCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -55,7 +56,6 @@ const authenticateAdmin = (req, res, next) => {
 
 // --- AUTHENTICATION ENDPOINTS (CHAT-BASED LOGIN) ---
 
-// Step 1: Verify Registration Number
 app.post('/api/v1/auth/verify-reg', async (req, res) => {
   const { regNumber } = req.body;
   if (!regNumber) return res.status(400).json({ error: 'Registration number required' });
@@ -71,11 +71,8 @@ app.post('/api/v1/auth/verify-reg', async (req, res) => {
   }
 });
 
-// Step 2: Verify Phone Number & Send OTP
 app.post('/api/v1/auth/verify-phone', async (req, res) => {
   const { regNumber, parentPhone } = req.body;
-  console.log(`[AUTH] Received OTP request for Reg: ${regNumber}, Phone: ${parentPhone}`);
-
   try {
     const student = await Models.Student.findOne({
       regNumber: new RegExp('^' + regNumber.trim() + '$', 'i'),
@@ -84,14 +81,10 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
 
     if (!student) return res.status(404).json({ error: 'Number mismatch. Try again.' });
 
-    // Generate random 6-digit numeric OTP
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Store temporarily mapped by regNumber+Phone combo
     const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
     otpCache.set(cacheKey, generatedOtp);
 
-    // Send SMS via Fast2SMS
     const fast2smsKey = process.env.FAST2SMS_API_KEY;
     if (fast2smsKey) {
       try {
@@ -103,86 +96,47 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
             numbers: student.phone
           }
         });
-        console.log(`[AUTH] SMS OTP sent via Fast2SMS to ${student.phone}`);
       } catch (smsErr) {
         console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
       }
     }
 
-    console.log('--------------------------------------------');
-    console.log('NEW LOGIN ATTEMPT DETECTED');
-    console.log(`Student: ${student.name} (${regNumber})`);
-    console.log(`PARENT OTP: ${generatedOtp}`);
-    console.log(`Sent to: ${student.email}`);
-    console.log('--------------------------------------------');
-
-    // Send OTP via Email if available
     if (student.email) {
-      // Don't await email sending to avoid blocking the response (improves speed)
       sendEmailNotification(
         student.email,
         'Your Secure Login OTP',
-        `Hello ${student.name},\n\nYour one-time password (OTP) for the Academic Monitoring System is: ${generatedOtp}\n\nThis OTP is valid for 5 minutes. Please do not share this code with anyone.\n\nRegards,\nSecurity Team`
+        `Hello ${student.name},\n\nYour one-time password (OTP) for the Academic Monitoring System is: ${generatedOtp}\n\nThis OTP is valid for 5 minutes.\n\nRegards,\nSecurity Team`
       ).catch(err => console.error('Email failed in background:', err));
     }
 
     res.json({
       success: true,
-      message: `OTP sent successfully to ${student.email || 'your registered email'}. Please check your inbox (and spam folder).`
+      message: `OTP sent successfully to ${student.email || 'your registered email'}.`
     });
 
   } catch (err) {
-    console.error('OTP Error:', err.message);
     res.status(500).json({ error: 'Server error generating OTP' });
   }
 });
 
-// Step 3: Verify OTP & Login
 app.post('/api/v1/auth/verify-otp', async (req, res) => {
   const { regNumber, parentPhone, otp } = req.body;
-
   try {
     const cleanPhone = parentPhone.replace(/\s/g, '').trim();
     const cleanReg = regNumber.trim().toLowerCase();
     const cacheKey = `${cleanReg}_${cleanPhone}`;
-
-    // Fetch stored OTP from NodeCache
     const storedOtp = otpCache.get(cacheKey);
 
-    if (!storedOtp) {
-      return res.status(401).json({ error: 'OTP expired or not found. Please try again.' });
-    }
+    if (!storedOtp) return res.status(401).json({ error: 'OTP expired or not found.' });
+    if (storedOtp !== otp.trim() && otp.trim() !== '123456') return res.status(401).json({ error: 'Incorrect OTP.' });
 
-    if (storedOtp !== otp.trim() && otp.trim() !== '123456') {
-      return res.status(401).json({ error: 'Incorrect OTP.' });
-    }
-
-    // OTP matched perfectly, clear the cache to prevent reuse attacks
     otpCache.del(cacheKey);
-
-    const student = await Models.Student.findOne({
-      regNumber: new RegExp('^' + regNumber.trim() + '$', 'i'),
-      phone: cleanPhone
-    });
-
+    const student = await Models.Student.findOne({ regNumber: new RegExp('^' + regNumber.trim() + '$', 'i'), phone: cleanPhone });
     if (!student) return res.status(404).json({ error: 'Session expired or mismatch.' });
 
     const token = jwt.sign({ regNumber: student.regNumber }, JWT_SECRET, { expiresIn: '24h' });
-
-    res.json({
-      message: 'Login successful',
-      token,
-      student: {
-        regNumber: student.regNumber,
-        name: student.name,
-        branch: student.branch,
-        semester: student.semester,
-        phone: student.phone
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
+    res.json({ message: 'Login successful', token, student: { regNumber: student.regNumber, name: student.name, branch: student.branch, semester: student.semester, phone: student.phone } });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // --- STUDENT DATA ENDPOINTS ---
@@ -191,376 +145,185 @@ app.get('/api/v1/student/dashboard', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   const targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
   try {
-    const [student, attendance, academicStatus, performance, intraMarks, notifications] = await Promise.all([
-      Models.Student.findOne({ regNumber }),
-      Models.Attendance.findOne({ regNumber }),
-      Models.AcademicStatus.findOne({ regNumber }),
-      Models.AcademicPerformance.findOne({ regNumber }),
-      Models.IntraSemesterMarks.findOne({ regNumber }),
-      Models.Notification.find({ regNumber }).sort({ _id: -1 }).limit(5)
+    const [student, attendance, academicStatus, performance, intraMarks, notifications, financials, insights] = await Promise.all([
+      Models.Student.findOne({ regNumber }).lean(),
+      Models.Attendance.findOne({ regNumber }).lean(),
+      Models.AcademicStatus.findOne({ regNumber }).lean(),
+      Models.AcademicPerformance.findOne({ regNumber }).lean(),
+      Models.IntraSemesterMarks.findOne({ regNumber }).lean(),
+      Models.Notification.find({ regNumber }).sort({ _id: -1 }).limit(5).lean(),
+      Models.Financial.findOne({ regNumber }).lean(),
+      Models.Insight.findOne({ regNumber }).lean()
     ]);
 
     let currentCGPA = performance ? performance.currentCGPA : 0;
     let overallPercentage = attendance ? attendance.overallPercentage : 0;
     let backlogs = academicStatus ? academicStatus.numberOfBacklogs : 0;
+    let subjectWiseAttendance = attendance ? (attendance.subjectWise || []) : [];
 
-    if (targetSemester && student && targetSemester !== student.semester) {
+    if (targetSemester) {
       const semPerf = performance?.semesterWiseCGPA.find(s => s.semester === targetSemester);
       currentCGPA = semPerf ? semPerf.sgpa : 0;
-
       const semAtt = attendance?.semesterWise.find(s => s.semester === targetSemester);
       overallPercentage = semAtt ? semAtt.attendance.toFixed(1) : 0;
-
-      backlogs = 0; // Set to 0 for past semesters unless historical tracking is added
+      backlogs = academicStatus?.backlogSubjects ? academicStatus.backlogSubjects.filter(s => s.semester === targetSemester).length : 0;
+      subjectWiseAttendance = subjectWiseAttendance.filter(s => s.semester === targetSemester);
+    } else {
+      subjectWiseAttendance = (attendance?.semesterWise || []).map(s => ({ subject: `Semester ${s.semester}`, attendance: s.attendance }));
     }
 
     res.json({
       student,
-      attendance: attendance ? {
-        overallPercentage: overallPercentage,
-        lowAttendanceAlerts: attendance.lowAttendanceAlerts || []
-      } : null,
-      academicStatus: academicStatus ? { ...academicStatus.toObject(), numberOfBacklogs: backlogs } : null,
-      performance: performance ? { currentCGPA: currentCGPA } : null,
-      intraMarks: (() => {
-        if (!intraMarks) return [];
-        let marks = intraMarks.marks || [];
-        if (targetSemester) {
-          // If 30 subjects exist (5 per sem), slice them or filter by sem field
-          if (marks.length === 30) {
-            const start = (targetSemester - 1) * 5;
-            marks = marks.slice(start, start + 5);
-          } else if (marks[0] && marks[0].semester) {
-            marks = marks.filter(s => s.semester === targetSemester);
-          }
-        } else {
-          // Default to current semester if no target
-          if (student) {
-            marks = marks.filter(s => s.semester === student.semester);
-          }
-        }
-        return marks;
-      })(),
-      notifications: notifications.map(n => ({
-        id: n._id,
-        upcomingExams: n.upcomingExams || [],
-        assignmentDeadlines: n.assignmentDeadlines || []
-      }))
+      attendance: attendance ? { overallPercentage, subjectWise: subjectWiseAttendance, semesterWise: attendance.semesterWise || [], lowAttendanceAlerts: attendance.lowAttendanceAlerts || [] } : null,
+      academicStatus: academicStatus ? { ...academicStatus, numberOfBacklogs: backlogs } : null,
+      performance: performance ? { currentCGPA, subjectWiseMarks: targetSemester ? performance.subjectWiseMarks.filter(s => s.semester === targetSemester) : (performance.semesterWiseCGPA || []).map(s => ({ subject: `Semester ${s.semester}`, marks: (s.sgpa * 10).toFixed(1), grade: 'N/A', semester: s.semester })), semesterWiseCGPA: performance.semesterWiseCGPA || [] } : null,
+      financials, insights,
+      intraMarks: (intraMarks && intraMarks.semesters) ? (intraMarks.semesters.find(s => s.semester === (targetSemester || student?.semester || 6)) || null) : null,
+      notifications: notifications.map(n => ({ id: n._id, upcomingExams: n.upcomingExams || [], assignmentDeadlines: n.assignmentDeadlines || [] }))
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching dashboard data' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Error fetching dashboard data' }); }
 });
 
 app.get('/api/v1/student/attendance', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   let targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
-  if (isNaN(targetSemester)) targetSemester = null; // handle "all"
-
   try {
-    const [data, student] = await Promise.all([
-      Models.Attendance.findOne({ regNumber }),
-      Models.Student.findOne({ regNumber })
-    ]);
+    const data = await Models.Attendance.findOne({ regNumber }).lean();
     if (!data) return res.status(404).json({ error: 'No attendance data found' });
-
-    let overallPercentage = data.overallPercentage || 0;
-    let subjectWise = data.subjectWise || [];
-
+    let pct = data.overallPercentage || 0;
+    let subjects = data.subjectWise || [];
     if (targetSemester) {
       const semAtt = data.semesterWise.find(s => s.semester === targetSemester);
-      if (semAtt) {
-        overallPercentage = semAtt.attendance.toFixed(1);
-      }
-      // If we have 30 subjects packed in order (5 per sem), filter them
-      if (subjectWise.length === 30) {
-        const startIndex = (targetSemester - 1) * 5;
-        subjectWise = subjectWise.slice(startIndex, startIndex + 5);
-      } else if (subjectWise[0] && subjectWise[0].semester) {
-        subjectWise = subjectWise.filter(s => s.semester === targetSemester);
-      }
+      if (semAtt) pct = semAtt.attendance.toFixed(1);
+      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester-1)*5 && subjects.indexOf(s) < targetSemester*5));
     } else {
-      // Overall Summary: Return aggregated semester info rather than all subjects
-      subjectWise = (data.semesterWise || []).map(s => ({
-        subject: `Semester ${s.semester}`,
-        attendance: typeof s.attendance === 'number' ? s.attendance.toFixed(1) : parseFloat(s.attendance || 0).toFixed(1)
-      }));
+      subjects = (data.semesterWise || []).map(s => ({ subject: `Semester ${s.semester}`, attendance: Number(s.attendance.toFixed(1)) }));
     }
+    res.json({ overallPercentage: pct, subjectWise: subjects, semesterWise: data.semesterWise || [], lowAttendanceAlerts: data.lowAttendanceAlerts || [] });
+  } catch (error) { res.status(500).json({ error: 'Error fetching attendance' }); }
+});
 
-    const finalSubjectWise = subjectWise.map(s => {
-      const obj = s.toObject ? s.toObject() : s;
-      return obj;
-    });
-
-    res.json({
-      overallPercentage: overallPercentage,
-      subjectWise: finalSubjectWise,
-      semesterWise: data.semesterWise || [],
-      lowAttendanceAlerts: data.lowAttendanceAlerts || []
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching attendance' });
-  }
+app.get('/api/v1/student/daily-attendance', authenticateToken, async (req, res) => {
+  const regNumber = req.user.regNumber;
+  const { semester } = req.query;
+  try {
+    const data = await Models.DailyAttendance.findOne({ regNumber }).lean();
+    if (!data) return res.status(404).json({ error: 'No daily records found' });
+    let records = (data.attendanceRecords || []).filter(r => !semester || r.semester == semester);
+    res.json(records.sort((a, b) => new Date(b.date) - new Date(a.date)));
+  } catch (error) { res.status(500).json({ error: 'Error fetching daily attendance' }); }
 });
 
 app.get('/api/v1/student/academic-status', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   try {
-    const data = await Models.AcademicStatus.findOne({ regNumber });
+    const data = await Models.AcademicStatus.findOne({ regNumber }).lean();
     if (!data) return res.status(404).json({ error: 'No academic status data found' });
-
-    res.json({
-      numberOfBacklogs: data.numberOfBacklogs,
-      repeatedSubjects: data.repeatedSubjects || [],
-      incompleteSubjects: data.incompleteSubjects || [],
-      courseCompletionStatus: data.courseCompletionStatus
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching academic status' });
-  }
+    res.json({ numberOfBacklogs: data.numberOfBacklogs, repeatedSubjects: data.repeatedSubjects || [], incompleteSubjects: data.incompleteSubjects || [], courseCompletionStatus: data.courseCompletionStatus });
+  } catch (error) { res.status(500).json({ error: 'Error fetching academic status' }); }
 });
 
 app.get('/api/v1/student/performance', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
-  let targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
-  if (isNaN(targetSemester)) targetSemester = null;
-
+  const targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
   try {
-    const [data, student] = await Promise.all([
-      Models.AcademicPerformance.findOne({ regNumber }),
-      Models.Student.findOne({ regNumber })
-    ]);
+    const data = await Models.AcademicPerformance.findOne({ regNumber }).lean();
     if (!data) return res.status(404).json({ error: 'No performance data found' });
-
-    let currentCGPA = data.currentCGPA;
-    let subjectWiseMarks = data.subjectWiseMarks || [];
-
+    let cgpa = data.currentCGPA;
+    let subjects = data.subjectWiseMarks || [];
     if (targetSemester) {
       const semPerf = data.semesterWiseCGPA.find(s => s.semester === targetSemester);
-      if (semPerf) {
-        currentCGPA = semPerf.sgpa;
-      }
-
-      if (subjectWiseMarks.length === 30) {
-        const startIndex = (targetSemester - 1) * 5;
-        subjectWiseMarks = subjectWiseMarks.slice(startIndex, startIndex + 5);
-      } else if (subjectWiseMarks[0] && subjectWiseMarks[0].semester) {
-        subjectWiseMarks = subjectWiseMarks.filter(s => s.semester === targetSemester);
-      }
+      if (semPerf) cgpa = semPerf.sgpa;
+      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester-1)*5 && subjects.indexOf(s) < targetSemester*5));
     } else {
-      // Overall Summary: Provide semester breakdown instead of all subjects
-      subjectWiseMarks = (data.semesterWiseCGPA || []).map(s => ({
-        subject: `Semester ${s.semester}`,
-        marks: (s.sgpa * 10).toFixed(1),
-        grade: 'N/A'
-      }));
+      subjects = (data.semesterWiseCGPA || []).map(s => ({ subject: `Semester ${s.semester}`, marks: Number((s.sgpa * 10).toFixed(1)), grade: 'N/A' }));
     }
-
-    const finalSubjectMarks = subjectWiseMarks.map(s => {
-      const obj = s.toObject ? s.toObject() : s;
-      return obj;
-    });
-
-    res.json({
-      currentCGPA: currentCGPA,
-      yearWiseCGPA: data.yearWiseCGPA || [],
-      semesterWiseCGPA: data.semesterWiseCGPA || [],
-      subjectWiseMarks: finalSubjectMarks
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching performance data' });
-  }
+    res.json({ currentCGPA: cgpa, yearWiseCGPA: data.yearWiseCGPA || [], semesterWiseCGPA: data.semesterWiseCGPA || [], subjectWiseMarks: subjects });
+  } catch (error) { res.status(500).json({ error: 'Error fetching performance' }); }
 });
 
 app.get('/api/v1/student/financials', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   const targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
   try {
-    const [data, student] = await Promise.all([
-      Models.Financial.findOne({ regNumber }),
-      Models.Student.findOne({ regNumber })
-    ]);
-    if (!data) return res.status(404).json({ error: 'No financial data found' });
-
-    let pendingFees = data.pendingFees;
-    if (targetSemester && student && targetSemester !== student.semester) {
-      pendingFees = 0; // Past semesters are considered fully paid
+    const data = await Models.Financial.findOne({ regNumber }).lean();
+    if (!data) return res.status(404).json({ error: 'No financial data' });
+    let pending = data.pendingFees;
+    let history = data.paymentHistory || [];
+    if (targetSemester) {
+      history = history.filter(p => p.semester === targetSemester);
+      if (targetSemester !== (data.lastPaymentSemester || 6)) pending = 0;
     }
-
-    res.json({
-      feePaymentStatus: pendingFees > 0 ? 'Pending' : 'Paid',
-      pendingFees: pendingFees,
-      paymentHistory: data.paymentHistory || [],
-      scholarshipStatus: data.scholarshipStatus
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching financials' });
-  }
+    res.json({ feePaymentStatus: pending > 0 ? 'Pending' : 'Paid', pendingFees: pending, paymentHistory: history, semesterWiseFees: data.semesterWiseFees || [], scholarshipStatus: data.scholarshipStatus });
+  } catch (error) { res.status(500).json({ error: 'Error fetching financials' }); }
 });
 
 app.get('/api/v1/student/insights', authenticateToken, async (req, res) => {
   const regNumber = req.user.regNumber;
   const targetSemester = req.query.semester ? parseInt(req.query.semester, 10) : null;
-
   try {
-    const [insightData, comms, perfData] = await Promise.all([
-      Models.Insight.findOne({ regNumber }),
-      Models.Communication.findOne({ regNumber }),
-      Models.AcademicPerformance.findOne({ regNumber })
-    ]);
-
-    let strong = insightData?.strongSubjects || [];
-    let weak = insightData?.weakSubjects || [];
-    let suggestions = insightData?.improvementSuggestions || [];
-
-    // If a specific semester is targeted, calculate dynamic strong/weak subjects
+    const [insightData, comms, perfData] = await Promise.all([Models.Insight.findOne({ regNumber }).lean(), Models.Communication.findOne({ regNumber }).lean(), Models.AcademicPerformance.findOne({ regNumber }).lean()]);
+    let strong = insightData?.strongSubjects || [], weak = insightData?.weakSubjects || [], suggestions = insightData?.improvementSuggestions || [];
     if (targetSemester && perfData) {
       const subjects = perfData.subjectWiseMarks.filter(s => s.semester === targetSemester);
       if (subjects.length > 0) {
         const sorted = [...subjects].sort((a, b) => b.marks - a.marks);
-        strong = [sorted[0].subject];
-        weak = [sorted[sorted.length - 1].subject];
-
-        // Dynamic suggestion based on lowest score
-        if (sorted[sorted.length - 1].marks < 60) {
-          suggestions = [`Focus on ${sorted[sorted.length - 1].subject} - score is below 60.`];
-        } else {
-          suggestions = [`Excellent work in ${sorted[0].subject}! Keep it up.`];
-        }
+        strong = [sorted[0].subject]; weak = [sorted[sorted.length-1].subject];
+        suggestions = sorted[sorted.length-1].marks < 60 ? [`Focus on ${sorted[sorted.length-1].subject} - score is low.`] : [`Good work in ${sorted[0].subject}!`];
       }
     }
-
-    res.json({
-      insights: {
-        strongSubjects: strong,
-        weakSubjects: weak,
-        improvementSuggestions: suggestions
-      },
-      communication: comms ? {
-        facultyContact: comms.facultyContact || [],
-        classAdvisor: comms.classAdvisor || {},
-        academicOfficeContacts: comms.academicOfficeContacts || []
-      } : null
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching insights data' });
-  }
+    res.json({ insights: { strongSubjects: strong, weakSubjects: weak, improvementSuggestions: suggestions }, communication: comms });
+  } catch (error) { res.status(500).json({ error: 'Error fetching insights' }); }
 });
 
-app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
-  const regNumber = req.user.regNumber;
-  const { message, language = 'en' } = req.body;
-  if (!message) return res.status(400).json({ error: 'Message is required' });
+// --- CHATBOT ENDPOINT ---
 
-  const lower = message.toLowerCase().trim();
+app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
+  const { message, language } = req.body;
+  const regNumber = req.user.regNumber;
+  const lower = (message || "").toLowerCase();
 
   const translations = {
     en: {
-      default: "I can help you with attendance, CGPA, backlogs, fees, or student details. What would you like to know?",
-      attendance: (pct, lines) => {
-        const comment = pct >= 75 ? "The student is attending classes regularly." : "Attendance is currently below the required 75%.";
-        return `${comment} Overall attendance is ${pct}%. Subject-wise breakdown: ${lines}.`;
-      },
-      noAttendance: "I couldn't find any attendance records for this student.",
-      cgpa: (val) => {
-        const comment = val >= 8.0 ? "That's an excellent academic standing!" : "Keep working hard!";
-        return `The current CGPA is ${val}. ${comment}`;
-      },
-      noPerformance: "No performance data found.",
-      backlogs: (count) => count > 0
-        ? `The student currently has ${count} backlog(s). It's important to clear these in the upcoming exams.`
-        : "Great news! The student has 0 backlogs.",
-      noStatus: "No academic status data found.",
-      fees: (amt) => amt > 0
-        ? `There is a pending fee balance of ₹${amt}. Please ensure timely payment to avoid any inconvenience.`
-        : "All fees have been fully paid. No balance is pending.",
-      noFinancials: "No financial data found.",
-      student: (s) => `Here are the details for ${s.name}: Registration ${s.regNumber}, ${s.branch}, Semester ${s.semester}.`,
-      noStudent: "I couldn't retrieve the student details at this moment.",
-      hello: "Hello! I'm your Academic Assistant. I can help you monitor your child's progress. What can I check for you?",
-      thanks: "You're very welcome! Let me know if you need anything else.",
-      navigation: "To see all records, click the 'Dashboard' link in the sidebar. You will find dedicated cards for 'Attendance', 'Performance', and 'Fees' right there. You can also click on the 'Attendance' icon in the sidebar for a detailed subject-wise sheet.",
-      download: "To download reports, navigate to the Dashboard. You will see 'Download PDF' or 'Export' buttons on each data card (Attendance, Marks, and Fees). Simply click them to save the file to your device.",
-      graphs: "The graphs show the overall academic trend. The 'Attendance Chart' visualizes consistency in classes, while the 'CGPA Graph' tracks progress across semesters. A rising line indicates improvement, while a declining line suggests the student may need more support in specific areas.",
-      events: "Here are the upcoming academic events: ",
-      noEvents: "No upcoming events found at the moment.",
-      activities: (act) => `The student is actively involved in: ${act}.`,
-      noActivities: "No extracurricular activity records found.",
-      achievements: (ach) => `Academic Achievements: ${ach}.`,
-      noAchievements: "No certificates or awards have been recorded yet.",
-      weakness: (subs) => `Based on recent scores, the student may need extra focus in: ${subs}.`,
-      noWeakness: "The student is performing consistently across all subjects.",
-      feeDeadline: "The last date for fee payment is usually the 15th of next month. Please check the 'Fees' section in the dashboard for exact dates."
+      default: "I'm not sure how to help. Ask about attendance, marks, or fees.",
+      noAttendance: "Attendance data not found.",
+      noPerformance: "Performance data not found.",
+      noStatus: "Records not found.",
+      noFinancials: "Financial records not found.",
+      noStudent: "Student details not found.",
+      noEvents: "No upcoming events.",
+      hello: "Hello! I am your Academic Assistant. How can I help you?",
+      thanks: "You're welcome!",
+      navigation: "To see all records, go to the Dashboard.",
+      download: "Download reports from data cards on the Dashboard.",
+      graphs: "Graphs show your overall trends.",
+      events: "Upcoming events: ",
+      feeDeadline: "Next fee deadline is usually the 15th.",
+      attendance: (pct, lines) => `Overall attendance is ${pct}%. Breakdown: ${lines}.`,
+      cgpa: (val) => `Current CGPA is ${val}.`,
+      fees: (amt) => amt > 0 ? `Pending fees: ₹${amt}.` : "Fees fully paid.",
+      backlogs: (count, subs = []) => count === 0 ? "0 backlogs." : `Backlogs: ${count}. Subjects: ${subs.map(s => s.subjectName).join(', ')}.`
     },
     hi: {
-      default: "मैं आपकी उपस्थिति, सीजीपीए, बैकलॉग, फीस या छात्र विवरण में मदद कर सकता हूं। आप क्या जानना चाहेंगे?",
-      attendance: (pct, lines) => `वर्तमान उपस्थिति ${pct}% है। विषयवार: ${lines}।`,
-      noAttendance: "कोई उपस्थिति डेटा नहीं मिला।",
-      cgpa: (val) => `वर्तमान सीजीपीए ${val} है।`,
-      noPerformance: "कोई प्रदर्शन डेटा नहीं मिला।",
-      backlogs: (count) => `छात्र के पास वर्तमान में ${count} बैकलॉग हैं।`,
-      noStatus: "कोई शैक्षणिक स्थिति डेटा नहीं मिला।",
-      fees: (amt) => `लंबित शुल्क राशि ₹${amt} है।`,
-      noFinancials: "कोई वित्तीय डेटा नहीं मिला।",
-      student: (s) => `छात्र: ${s.name}, पंजीकरण: ${s.regNumber}, विभाग: ${s.branch}, सेमेस्टर: ${s.semester}।`,
-      noStudent: "छात्र का विवरण नहीं मिला।",
-      hello: "नमस्ते! मैं आपका शैक्षणिक सहायक हूं। मैं आपकी कैसे मदद कर सकता हूं?",
-      thanks: "आपका स्वागत है! यदि आपको कुछ और चाहिए तो मुझे बताएं।",
-      navigation: "सभी रिकॉर्ड देखने के लिए, साइडबार में 'डैशबोर्ड' लिंक पर क्लिक करें। आपको वहां 'उपस्थिति', 'प्रदर्शन' और 'फीस' के लिए समर्पित कार्ड मिलेंगे।",
-      download: "रिपोर्ट डाउनलोड करने के लिए, डैशबोर्ड पर जाएं। आपको प्रत्येक डेटा कार्ड (उपस्थिती, अंक और शुल्क) पर 'डाउनलोड पीडीएफ' बटन दिखाई देंगे।",
-      graphs: "ग्राफ समग्र शैक्षणिक रुझान दिखाते हैं। 'उपस्थिति चार्ट' कक्षाओं में निरंतरता की कल्पना करता है, जबकि 'सीजीपीए ग्राफ' सेमेस्टर में प्रगति को ट्रैक करता है।",
-      events: "यहां आने वाले शैक्षणिक कार्यक्रम हैं: ",
-      noEvents: "फिलहाल कोई आगामी कार्यक्रम नहीं है।",
-      activities: (act) => `छात्र सक्रिय रूप से शामिल है: ${act}।`,
-      noActivities: "कोई अतिरिक्त गतिविधि रिकॉर्ड नहीं मिला।",
-      achievements: (ach) => `शैक्षणिक उपलब्धियां: ${ach}।`,
-      noAchievements: "अभी तक कोई प्रमाण पत्र या पुरस्कार दर्ज नहीं किया गया है।",
-      weakness: (subs) => `हाल के अंकों के आधार पर, छात्र को इन विषयों में अतिरिक्त ध्यान देने की आवश्यकता हो सकती है: ${subs}।`,
-      noWeakness: "छात्र सभी विषयों में लगातार अच्छा प्रदर्शन कर रहा है।",
-      feeDeadline: "फीस जमा करने की आखिरी तारीख आमतौर पर अगले महीने की 15 तारीख होती है। सटीक तारीखों के लिए डैशबोर्ड देखें।"
+      default: "मुझे यकीन नहीं है कि मैं इसमें कैसे मदद कर सकता हूँ।",
+      noAttendance: "उपस्थिति डेटा नहीं मिला।",
+      noPerformance: "प्रदर्शन डेटा नहीं मिला।",
+      hello: "नमस्ते! मैं आपका शैक्षणिक सहायक हूँ। मैं आज आपकी कैसे मदद कर सकता हूँ?",
+      thanks: "आपका स्वागत है!",
+      attendance: (pct, lines) => `कुल उपस्थिति ${pct}% है। विषयवार विवरण: ${lines}.`,
+      cgpa: (val) => `वर्तमान CGPA ${val} है।`,
+      fees: (amt) => amt > 0 ? `लंबित फीस: ₹${amt}।` : "सभी फीस का भुगतान कर दिया गया है।",
+      backlogs: (count) => `वर्तमान बैकलग: ${count}।`
     },
     te: {
-      default: "నేను మీకు అటెండెన్స్, CGPA, బ్యాక్‌లాగ్‌లు, ఫీజులు లేదా విద్యార్థి వివరాల గురించి సహాయం చేయగలను. మీరు ఏమి తెలుసుకోవాలనుకుంటున్నారు?",
-      attendance: (pct, lines) => {
-        const comment = pct >= 75 ? "విద్యార్థి తరగతులకు క్రమం తప్పకుండా హాజరవుతున్నారు." : "అటెండెన్స్ ప్రస్తుతం అవసరమైన 75% కంటే తక్కువగా ఉంది.";
-        return `${comment} మొత్తం అటెండెన్స్ ${pct}%. సబ్జెక్ట్ వారిగా వివరాలు: ${lines}.`;
-      },
+      default: "దానితో ఎలా సహాయపడాలో నాకు తెలియదు.",
       noAttendance: "అటెండెన్స్ డేటా కనుగొనబడలేదు.",
-      cgpa: (val) => {
-        const comment = val >= 8.0 ? "అద్భుతమైన అకడమిక్ ప్రదర్శన!" : "మరింత కష్టపడి చదవండి!";
-        return `ప్రస్తుత CGPA ${val}. ${comment}`;
-      },
-      noPerformance: "పనితీరు డేటా కనుగొనబడలేదు.",
-      backlogs: (count) => count > 0
-        ? `విద్యార్థికి ప్రస్తుతం ${count} బ్యాక్‌లాగ్‌లు ఉన్నాయి. రాబోయే పరీక్షల్లో వీటిని క్లియర్ చేయడం ముఖ్యం.`
-        : "శుభవార్త! విద్యార్థికి 0 బ్యాక్‌లాగ్‌లు ఉన్నాయి.",
-      noStatus: "అకడమిక్ స్టేటస్ డేటా కనుగొనబడలేదు.",
-      fees: (amt) => amt > 0
-        ? `పెండింగ్ ఫీజు మొత్తం ₹${amt}. ఎటువంటి ఇబ్బంది కలగకుండా సకాలంలో చెల్లించండి.`
-        : "అన్ని ఫీజులు పూర్తిగా చెల్లించబడ్డాయి. ఎటువంటి బాకీ లేదు.",
-      noFinancials: "ఆర్థిక డేటా కనుగొనబడలేదు.",
-      student: (s) => `${s.name} వివరాలు: రిజిస్ట్రేషన్ ${s.regNumber}, ${s.branch}, సెమిస్టర్ ${s.semester}.`,
-      noStudent: "విద్యార్థి వివరాలు కనుగొనబడలేదు.",
-      hello: "నమస్తే! నేను మీ అకడమిక్ అసిస్టెంట్‌ని. మీ పిల్లల పురోగతిని పర్యవేక్షించడంలో నేను మీకు సహాయపడతాను. నేను మీ కోసం ఏమి తనిఖీ చేయగలను?",
-      thanks: "మీకు స్వాగతం! మీకు ఇంకేదైనా అవసరమైతే నాకు తెలియజేయండి.",
-      navigation: "అన్ని రికార్డులను చూడటానికి, సైడ్‌బార్‌లోని 'డ్యాష్‌బోర్డ్' లింక్‌పై క్లిక్ చేయండి. మీరు అక్కడ 'అటెండెన్స్', 'పెర్ఫార్మెన్స్' మరియు 'ఫీజు' కోసం ప్రత్యేక కార్డ్‌లను కనుగొంటారు. సబ్జెక్ట్ వారీగా వివరాల కోసం సైడ్‌బార్‌లోని 'అటెండెన్స్' చిహ్నంపై కూడా క్లిక్ చేయవచ్చు.",
-      download: "రిపోర్టులను డౌన్‌లోడ్ చేయడానికి, డ్యాష్‌బోర్డ్‌కు వెళ్లండి. మీరు ప్రతి డేటా కార్డ్ (అటెండెన్స్, మార్కులు మరియు ఫీజులు) పై 'PDF డౌన్‌లోడ్' లేదా 'ఎక్స్‌పోర్ట్' బటన్లను చూస్తారు. ఫైల్‌ను సేవ్ చేయడానికి వాటిని క్లిక్ చేయండి.",
-      graphs: "గ్రాఫ్‌లు మొత్తం అకడమిక్ ట్రెండ్‌ను చూపుతాయి. 'అటెండెన్స్ చార్ట్' తరగతుల్లో స్థిరత్వాన్ని వివరిస్తుంది, మరియు 'CGPA గ్రాఫ్' సెమిస్టర్‌లలో పురోగతిని ట్రాక్ చేస్తుంది. ఎదుగుతున్న లైన్ మెరుగుదలని సూచిస్తుంది.",
-      events: "రాబోయే అకడమిక్ ఈవెంట్‌లు ఇక్కడ ఉన్నాయి: ",
-      noEvents: "ప్రస్తుతం రాబోయే ఈవెంట్‌లు ఏవీ లేవు.",
-      activities: (act) => `విద్యార్థి వీటిలో చురుకుగా పాల్గొంటున్నారు: ${act}.`,
-      noActivities: "అదనపు కార్యకలాపాల రికార్డులు ఏవీ కనుగొనబడలేదు.",
-      achievements: (ach) => `అకడమిక్ విజయాలు: ${ach}.`,
-      noAchievements: "ఇంకా ఎటువంటి సర్టిఫికెట్లు లేదా అవార్డులు నమోదు కాలేదు.",
-      weakness: (subs) => `ఇటివలి మార్కుల ఆధారంగా, విద్యార్థి ఈ సబ్జెక్టులపై అదనపు దృష్టి పెట్టాలి: ${subs}.`,
-      noWeakness: "విద్యార్థి అన్ని సబ్జెక్టులలో స్థిరంగా రాణిస్తున్నారు.",
-      feeDeadline: "ఫీజు చెల్లించడానికి చివరి తేదీ సాధారణంగా వచ్చే నెల 15వ తేదీ. ఖచ్చితమైన తేదీల కోసం డ్యాష్‌బోర్డ్ లోని 'ఫీజు' విభాగం చూడండి."
+      hello: "నమస్తే! నేను మీ అకడమిక్ అసిస్టెంట్‌ని.",
+      thanks: "మీకు స్వాగతం!",
+      attendance: (pct, lines) => `మొత్తం అటెండెన్స్ ${pct}%. వివరాలు: ${lines}.`,
+      cgpa: (val) => `ప్రస్తుత CGPA ${val}.`,
+      fees: (amt) => amt > 0 ? `పెండింగ్ ఫీజు ₹${amt}.` : "అన్ని ఫీజులు చెల్లించబడ్డాయి.",
+      backlogs: (count) => `బ్యాక్‌లాగ్‌లు: ${count}.`
     }
   };
 
@@ -571,447 +334,208 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
     const result = await manager.process(language, message);
     const intent = result.intent;
 
-    const semMatch = lower.match(/(?:sem|semester|सेम|सेमेस्टर|సెమ్|సెమిస్టర్)\s*(\d)/i);
+    const semMatch = lower.match(/(?:sem|semester|सेम|సెమ్)\s*(\d)/i);
     const targetSemester = semMatch ? parseInt(semMatch[1], 10) : null;
+    const dateMatch = lower.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/) || 
+                      lower.match(/(\d{1,2})(?:st|nd|rd|th)?\s+\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b(?:\s+(\d{2,4}))?/) ||
+                      lower.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?/);
+    const hourMatch = lower.match(/(\d)(?:st|nd|rd|th)?\s+(?:hour|period|గంట|పీరియడ్)/) || lower.match(/(?:hour|period|గంట|పీరిयడ్)\s+(\d)/);
+    const isDateQueryPriority = !!(dateMatch || lower.includes('today') || lower.includes('yesterday'));
 
-    // 1. High-Priority Specific Intent (Navigation, Downloads, Graphs)
-    if (intent === 'marksheet_download' || (intent === 'None' && lower.match(/\b(download|डाउनलोड|డౌన్‌లోడ్)\b/))) {
-      responseText = t.download;
+    if (isDateQueryPriority || intent === 'date_attendance_query' || lower.match(/\b(yesterday|yesteerady|yestreday|yesturday|today)\b/)) {
+      const dailyLogs = await Models.DailyAttendance.findOne({ regNumber });
+      let targetDate = "";
+      if (dateMatch) {
+         const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+         // Pattern 1: DD MM YYYY or DD Month
+         if (!isNaN(dateMatch[1]) && isNaN(dateMatch[2])) {
+           const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
+           targetDate = `${year}-${months[dateMatch[2].toLowerCase().substring(0, 3)]}-${dateMatch[1].padStart(2,'0')}`;
+         } 
+         // Pattern 3: Month DD
+         else if (isNaN(dateMatch[1]) && !isNaN(dateMatch[2])) {
+           const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
+           targetDate = `${year}-${months[dateMatch[1].toLowerCase().substring(0, 3)]}-${dateMatch[2].padStart(2,'0')}`;
+         }
+         // Pattern 2: DD/MM/YYYY
+         else {
+           const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
+           targetDate = `${year}-${dateMatch[2].padStart(2,'0')}-${dateMatch[1].padStart(2,'0')}`;
+         }
+      } else if (lower.match(/\btoday\b/)) { targetDate = new Date().toISOString().split('T')[0]; }
+      else if (lower.match(/\b(yesterday|yesteerady|yestreday|yesturday)\b/)) { const d = new Date(); d.setDate(d.getDate()-1); targetDate = d.toISOString().split('T')[0]; }
+
+      if (dailyLogs && targetDate) {
+        const HOLIDAYS = { '2023-01-26': 'Republic Day', '2024-01-26': 'Republic Day', '2025-01-26': 'Republic Day', '2026-01-26': 'Republic Day' };
+        if (HOLIDAYS[targetDate]) { responseText = `📅 **${targetDate}** was a holiday (**${HOLIDAYS[targetDate]}**). No classes were held.`; }
+        else {
+          const record = dailyLogs.attendanceRecords.find(r => r.date === targetDate);
+          if (record) {
+             const student = await Models.Student.findOne({ regNumber }).lean();
+             const getSub = (h, s) => {
+               const subs = { 1: {theory:['Math-I','English','Physics','Programming','Discrete'], labs:['MATH','ENG','PHY']}, 6: {theory:['ML','Big Data','Cloud','Cyber','Training Session'], labs:['ML LAB','TRAINING SESSION','PROJ']} };
+               const c = subs[s] || {theory:['Subject'], labs:['Lab']};
+               return h <= 5 ? c.theory[h-1] : c.labs[h-6];
+             };
+             const sSem = student?.semester || 6;
+             if (hourMatch) {
+                const h = parseInt(hourMatch[1]);
+                const st = record.hours.find(hr => hr.hour === h);
+                responseText = `On ${targetDate}, Hour ${h} (${getSub(h, sSem)}) was **${st?.status || 'N/A'}**.`;
+             } else {
+                const breakdown = record.hours.map(h => `• H${h.hour} (${getSub(h.hour, sSem)}): ${h.status === 'Present' ? '✅' : '❌'}`).join('\n');
+                responseText = `📅 **Analysis: ${targetDate}**\n\n${breakdown}\n\nPresent for **${record.hours.filter(h => h.status === 'Present').length}/8** periods.`;
+             }
+          } else { responseText = `No records for ${targetDate}. Might be a holiday.`; }
+        }
+      } else { responseText = t.noAttendance; }
     }
-    else if (intent === 'dashboard_navigation' || (intent === 'None' && lower.match(/\b(where|how to check|find|navigate|dashboard)\b/))) {
-      responseText = t.navigation;
-    }
-    else if (intent === 'graphs_query' || (intent === 'None' && lower.match(/\b(graph|chart|visual)\b/))) {
-      responseText = t.graphs;
-    }
-    // 2. Events & Calendar
-    else if (intent === 'events_query' || (intent === 'None' && lower.match(/\b(event|exam date|holiday)\b/))) {
-      const notify = await Models.Notification.findOne({ regNumber });
+    else if (intent === 'marksheet_download' || lower.match(/\b(download)\b/)) { responseText = t.download; }
+    else if (intent === 'dashboard_navigation' || lower.match(/\b(where|dashboard)\b/)) { responseText = t.navigation; }
+    else if (intent === 'events_query' || lower.match(/\b(event|holiday)\b/)) {
+      const notify = await Models.Notification.findOne({ regNumber }).lean();
       if (notify && (notify.upcomingExams.length || notify.academicCalendarUpdates.length)) {
-        const exams = notify.upcomingExams.join(', ');
-        const updates = notify.academicCalendarUpdates.join(', ');
-        responseText = t.events + (exams ? ` Exams: ${exams}.` : '') + (updates ? ` Updates: ${updates}.` : '');
-      } else {
-        responseText = t.noEvents;
-      }
+        responseText = t.events + notify.upcomingExams.join(', ') + notify.academicCalendarUpdates.join(', ');
+      } else { responseText = t.noEvents; }
     }
-    // 3. Summary query (Overall Status)
-    else if (intent === 'summary_query' || (intent === 'None' && lower.match(/\b(summary|overall|सारांश|సారాంశం)\b/))) {
-      const attendance = await Models.Attendance.findOne({ regNumber });
-      const perf = await Models.AcademicPerformance.findOne({ regNumber });
-      const acStatus = await Models.AcademicStatus.findOne({ regNumber });
-
-      let summary = language === 'hi' ? "यहां छात्र का सारांश है: " : language === 'te' ? "ఇక్కడ విద్యార్థి సారాంశం ఉంది: " : "Here is the overall summary: ";
-      if (attendance) summary += `${language === 'hi' ? 'उपस्थिति' : language === 'te' ? 'అటెండెన్స్' : 'Attendance'}: ${attendance.overallPercentage}%, `;
-      if (perf) summary += `CGPA: ${perf.currentCGPA}, `;
-      if (acStatus) summary += `${language === 'hi' ? 'बैकलॉग' : language === 'te' ? 'బ్యాక్‌లాగ్‌లు' : 'Backlogs'}: ${acStatus.numberOfBacklogs}. `;
-
-      responseText = summary + (language === 'hi' ? "कुल मिलाकर प्रदर्शन अच्छा है।" : language === 'te' ? "మొత్తం పనితీరు బాగుంది." : "Overall performance is stable.");
+    else if (intent === 'subject_attendance_query' || lower.match(/\b(trai|trani|tarni|trng|training)\b/)) {
+      const attendance = await Models.Attendance.findOne({ regNumber }).lean();
+      if (attendance) {
+        const sub = attendance.subjectWise.find(s => s.subject.toLowerCase().includes('training'));
+        if (sub) {
+          const status = sub.attendance >= 75 ? "Yes, your child is attending the training sessions regularly." : "Your child's attendance in training sessions needs improvement.";
+          responseText = `🎯 **Training Session Attendance**\n\n${status}\n\nCurrent Attendance: **${sub.attendance}%**.`;
+        } else {
+          responseText = `No specific records found for Training Session attendance. Current overall attendance is ${attendance.overallPercentage}%.`;
+        }
+      } else responseText = t.noAttendance;
     }
-    // 4. Data Queries
-    else if (intent === 'semester_attendance_query' || intent === 'attendance_query' || (intent === 'None' && lower.match(/\b(attendance|regularly|attending|present|అటెండెన్స్|उपस्थिति)\b/))) {
-      const attendance = await Models.Attendance.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
+    else if (intent === 'attendance_query' || lower.match(/\b(attendance|present)\b/)) {
+      const attendance = await Models.Attendance.findOne({ regNumber }).lean();
       if (attendance) {
         let pct = attendance.overallPercentage;
-        if (targetSemester) {
-          const semAtt = attendance.semesterWise.find(s => s.semester === targetSemester);
-          if (semAtt) {
-            pct = semAtt.attendance.toFixed(1);
-            responseText = `(Sem ${targetSemester}) ` + t.attendance(pct, "Database Record");
-          } else if (student && targetSemester === student.semester) {
-            const subLines = (attendance.subjectWise || []).map(s => `${s.subject} ${s.attendance}%`).join(', ');
-            responseText = t.attendance(pct, subLines);
-          } else {
-            // Fallback for missing past/future semester data
-            pct = (pct - Math.random() * 5).toFixed(1);
-            responseText = `(Sem ${targetSemester}) ` + t.attendance(pct, "Estimated Data");
-          }
-        } else {
-          const subWise = attendance.subjectWise || [];
-          const subLines = subWise.map(s => `${s.subject} ${s.attendance}%`).join(', ');
-          responseText = t.attendance(pct, subLines);
-        }
-      } else {
-        responseText = t.noAttendance;
-      }
+        if (targetSemester) { const s = attendance.semesterWise.find(sw => sw.semester == targetSemester); pct = s ? s.attendance : pct; }
+        responseText = t.attendance(pct, "Check Dashboard for details.");
+      } else responseText = t.noAttendance;
     }
-    else if (lower.match(/\b(subject|विषय|సబ్జెక్ట్)\b/) && lower.match(/\b(marks|अंक|మార్కులు|score)\b/)) {
-      const perf = await Models.AcademicPerformance.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
+    else if (intent === 'internal_marks_query' || lower.match(/\b(m1|m2|t1|t2|module|internal)\b/)) {
+      const intra = await Models.IntraSemesterMarks.findOne({ regNumber }).lean();
+      if (intra) {
+        const isModule2 = lower.includes('m2') || lower.includes('module 2') || lower.includes('मॉड्यूल 2') || lower.includes('మాడ్యూల్ 2');
+        const modNum = isModule2 ? 2 : 1;
+        const semData = (intra.semesters || []).find(s => s.semester === (targetSemester || 6));
+        const targetExams = semData?.exams || [];
+        
+        let subIndex = -1;
+        let finalSubName = "Subject";
+        const subjectsMap = { 
+          'machine learning': 'MACHINE LEARNING', ml: 'MACHINE LEARNING', 
+          'big data': 'BIG DATA', cloud: 'CLOUD COMPUTING', 
+          'cyber security': 'CYBER SECURITY', cyber: 'CYBER SECURITY',
+          devops: 'DEVOPS', training: 'DEVOPS' 
+        };
+        
+        // Find subject index in the semester's subject list
+        for (const [key, val] of Object.entries(subjectsMap)) {
+          if (lower.includes(key)) {
+            const list = semData?.subjects || [];
+            subIndex = list.findIndex(s => s.toUpperCase() === val || s.toUpperCase().includes(key.toUpperCase()));
+            finalSubName = val;
+            if (subIndex !== -1) break;
+          }
+        }
+        // Secondary fallback: search for subject names directly (supports localized text if present in DB)
+        if (subIndex === -1) {
+          subIndex = (semData?.subjects || []).findIndex(s => lower.includes(s.toLowerCase()));
+          if (subIndex !== -1) finalSubName = semData.subjects[subIndex];
+        }
+
+        let testName = "";
+        const tests = { pret1: 'PRET1', t1: 'T1', t2: 'T2', t3: 'T3', t4: 'T4', t5: 'T5', review: 'REVIEW' };
+        for (const [key, val] of Object.entries(tests)) { if (lower.includes(key)) testName = val; }
+
+        const modRegex = new RegExp(`Module\\s*${modNum}`, 'i');
+        const testRegex = new RegExp(testName || 'T1', 'i');
+
+        const match = targetExams.find(e => modRegex.test(e.title) && testRegex.test(e.title));
+        if (match && subIndex !== -1) {
+          const score = match.marks[subIndex] !== undefined ? match.marks[subIndex] : 'N/A';
+          responseText = `📝 **Internal Performance: Module ${modNum}**\n\nAssessment: **${match.title}**\nSubject: **${finalSubName}**\nScore: **${score}/20**\n\n${score >= 12 ? 'Great performance! Keep it up.' : 'Needs some more focus in this subject.'}`;
+        } else {
+          responseText = `I found your internal marks for Module ${modNum}, but I couldn't find a specific score for **${finalSubName}** in the **${testName || 'T1'}** assessment. Please check the dashboard.`;
+        }
+      } else responseText = t.noPerformance;
+    }
+    else if (intent === 'cgpa_query' || lower.match(/\b(cgpa|marks)\b/)) {
+      const perf = await Models.AcademicPerformance.findOne({ regNumber }).lean();
       if (perf) {
-        let subjects = perf.subjectWiseMarks || [];
-        const semesterToTarget = targetSemester || student?.semester;
-
-        if (semesterToTarget) {
-          subjects = subjects.filter(s => s.semester == semesterToTarget);
-        }
-
-        if (subjects.length > 0) {
-          const subLines = subjects.map(s => `${s.subject}: ${s.marks} (Grade ${s.grade})`).join(', ');
-          responseText = (language === 'hi' ? `सेमेस्टर ${semesterToTarget} के लिए विषयवार अंक: ` : language === 'te' ? `సెమిస్టర్ ${semesterToTarget} సబ్జెక్ట్ వారీగా మార్కులు: ` : `Subject-wise marks for Semester ${semesterToTarget}: `) + subLines;
-        } else {
-          responseText = t.noPerformance;
-        }
-      } else {
-        responseText = t.noPerformance;
-      }
+        let val = perf.currentCGPA;
+        if (targetSemester) { const s = perf.semesterWiseCGPA.find(sw => sw.semester == targetSemester); val = s ? s.sgpa : val; }
+        responseText = t.cgpa(val);
+      } else responseText = t.noPerformance;
     }
-    else if (intent === 'semester_cgpa_query' || intent === 'cgpa_query' || (intent === 'None' && lower.match(/\b(cgpa|grade|gpa|सीजीपीए|మార్కులు)\b/))) {
-      const perf = await Models.AcademicPerformance.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
-      if (perf) {
-        let cgpa = perf.currentCGPA;
+    else if (intent === 'backlogs_query' || lower.match(/\b(backlog|fail)\b/)) {
+      const status = await Models.AcademicStatus.findOne({ regNumber }).lean();
+      if (status) {
+        const list = (status.backlogSubjects || []).map(s => `• ${s.subjectName} (S${s.semester})`).join('\n');
+        responseText = `📚 **Backlog Status**\n\nTotal Backlogs: **${status.numberOfBacklogs}**\n\n${list || 'Character clear! No pending backlogs.'}`;
+      } else responseText = t.noPerformance;
+    }
+    else if (intent === 'fees_query' || lower.match(/\b(fee|payment)\b/)) {
+      const [financials, student] = await Promise.all([Models.Financial.findOne({ regNumber }).lean(), Models.Student.findOne({ regNumber }).lean()]);
+      if (financials) {
         if (targetSemester) {
-          const semPerf = perf.semesterWiseCGPA.find(s => s.semester === targetSemester);
-          if (semPerf) {
-            cgpa = parseFloat(semPerf.sgpa).toFixed(2);
-            responseText = `(Sem ${targetSemester}) ` + t.cgpa(cgpa);
-          } else if (student && targetSemester === student.semester) {
-            responseText = t.cgpa(parseFloat(cgpa).toFixed(2));
-          } else {
-            cgpa = (parseFloat(cgpa) - Math.random() * 0.5).toFixed(2);
-            responseText = `(Sem ${targetSemester}) ` + t.cgpa(cgpa);
-          }
+          const semFee = (financials.semesterWiseFees || []).find(f => f.semester === targetSemester);
+          responseText = semFee ? `💰 **Fee Status: Semester ${targetSemester}**\n\nPending: ₹${semFee.pending}\nStatus: ${semFee.status}` : `No specific fee records for Semester ${targetSemester}.`;
+        } else if (financials.pendingFees > 0) {
+          const pendingList = (financials.semesterWiseFees || [])
+            .filter(f => f.pending > 0)
+            .map(f => `• Sem ${f.semester}: ₹${f.pending}`)
+            .join('\n');
+          responseText = `💰 **Pending Fee Breakdown**\n\nTotal Pending: **₹${financials.pendingFees}**\n\nPending Semesters:\n${pendingList || 'Check dashboard for details.'}`;
         } else {
-          responseText = t.cgpa(parseFloat(cgpa).toFixed(2));
+          responseText = "✅ All fees are fully paid. No pending dues found!";
         }
-      } else {
-        responseText = t.noPerformance;
-      }
+      } else responseText = t.noFinancials;
     }
-    else if (intent === 'semester_fees_query' || intent === 'fees_query' || (intent === 'None' && lower.match(/\b(fee|fees|payment|ఫీజు|फीस)\b/))) {
-      const fin = await Models.Financial.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
-      if (fin) {
-        let fees = fin.pendingFees;
-        if (targetSemester && student && targetSemester !== student.semester) {
-          fees = 0; // Past semesters are fully paid
-          responseText = `(Sem ${targetSemester}) ` + t.fees(fees);
-        } else {
-          responseText = t.fees(fees);
-        }
-      } else {
-        responseText = t.noFinancials;
-      }
-    }
-    else if (intent === 'semester_backlog_query' || intent === 'backlogs_query' || intent === 'backlog_query' || (intent === 'None' && lower.match(/\b(backlog|బ్యాక్‌లాగ్|बैकलॉग)\b/))) {
-      const acStatus = await Models.AcademicStatus.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
-      if (acStatus) {
-        let bl = acStatus.numberOfBacklogs;
-        if (targetSemester) {
-          if (student && targetSemester > student.semester) {
-            bl = 0; // Future
-          } else if (student && targetSemester < student.semester) {
-            bl = Math.floor(Math.random() * 2); // Random for past if not tracked
-          }
-          responseText = `(Sem ${targetSemester}) ` + t.backlogs(bl);
-        } else {
-          responseText = t.backlogs(bl);
-        }
-      } else responseText = t.noStatus;
-    }
-    else if (intent === 'student_query' || (intent === 'None' && lower.match(/\b(student|roll|who|profile)\b/))) {
-      const student = await Models.Student.findOne({ regNumber });
-      if (student) responseText = t.student(student);
-      else responseText = t.noStudent;
-    }
-    else if (intent === 'performance_insights' || lower.match(/\b(strong|weak|best|worst|good in|bad in|improvement)\b/)) {
-      const perf = await Models.AcademicPerformance.findOne({ regNumber });
-      const student = await Models.Student.findOne({ regNumber });
-      const semesterToTarget = targetSemester || student?.semester;
+    else if (intent === 'greeting' || lower.match(/\b(hi|hello)\b/)) { responseText = t.hello; }
+    else if (intent === 'thanks_query' || lower.match(/\b(thank)\b/)) { responseText = t.thanks; }
 
-      if (perf && perf.subjectWiseMarks && perf.subjectWiseMarks.length > 0) {
-        let subjects = perf.subjectWiseMarks;
-        if (semesterToTarget) {
-          subjects = subjects.filter(s => s.semester === semesterToTarget);
-        }
-
-        if (subjects.length > 0) {
-          const sorted = [...subjects].sort((a, b) => b.marks - a.marks);
-          const strong = sorted[0];
-          const weak = sorted[sorted.length - 1];
-
-          if (language === 'hi') {
-            responseText = `सेमेस्टर ${semesterToTarget} के लिए, ${strong.subject} (${strong.marks}) सबसे मजबूत विषय है और ${weak.subject} (${weak.marks}) में सुधार की आवश्यकता है।`;
-          } else if (language === 'te') {
-            responseText = `సెమిస్టర్ ${semesterToTarget} కోసం, ${strong.subject} (${strong.marks}) బలమైన సబ్జెక్ట్ మరియు ${weak.subject} (${weak.marks}) లో మెరుగుదల అవసరం.`;
-          } else {
-            responseText = `For Semester ${semesterToTarget}, the strong subject is ${strong.subject} (${strong.marks} marks) and the weak subject is ${weak.subject} (${weak.marks} marks).`;
-          }
-        } else {
-          responseText = t.noPerformance;
-        }
-      } else {
-        responseText = t.noPerformance;
-      }
-    }
-    else if (intent === 'activities_query' || (intent === 'None' && lower.match(/\b(activity|extracurricular|sports?|club)\b/))) {
-      responseText = t.noActivities;
-    }
-    else if (intent === 'achievements_query' || (intent === 'None' && lower.match(/\b(certificate|awards?|achievement)\b/))) {
-      responseText = t.noAchievements;
-    }
-    else if (intent === 'fees_deadline_query' || (intent === 'None' && lower.match(/\b(deadline|last date)\b/))) {
-      responseText = t.feeDeadline;
-    }
-    else if (intent === 'greeting' || (intent === 'None' && lower.match(/\b(hi|hello|नमस्ते|నమస్తే)\b/))) {
-      responseText = t.hello;
-    }
-    else if (intent === 'thanks_query' || (intent === 'None' && lower.match(/\b(thank|thanks|धन्यवाद|ధన్యవాదాలు)\b/))) {
-      responseText = t.thanks;
-    }
-
-    // Final step: If NLP manager provided an answer, use it and inject variables
-    if (result.answer) {
-      const student = await Models.Student.findOne({ regNumber });
-      const [attendance, perf, acStatus, fin, notify, intra] = await Promise.all([
-        Models.Attendance.findOne({ regNumber }),
-        Models.AcademicPerformance.findOne({ regNumber }),
-        Models.AcademicStatus.findOne({ regNumber }),
-        Models.Financial.findOne({ regNumber }),
-        Models.Notification.findOne({ regNumber }),
-        Models.IntraSemesterMarks.findOne({ regNumber })
-      ]);
-
-      let enriched = result.answer;
-
-      const replacements = {
-        // Basic Info
-        '{student_name}': student?.name || 'Student',
-        '{name}': student?.name || 'Student',
-        '{regNumber}': student?.regNumber || 'N/A',
-        '{reg_number}': student?.regNumber || 'N/A',
-        '{branch}': student?.branch || 'N/A',
-        '{semester}': targetSemester || student?.semester || 'N/A',
-        '{year}': student?.semester > 2 ? (student.semester > 4 ? '3rd Year' : '2nd Year') : '1st Year',
-        '{email}': student?.email || 'N/A',
-        '{contact}': student?.phone || 'N/A',
-
-        // Performance
-        '{cgpa}': targetSemester ? (perf?.semesterWiseCGPA.find(s => s.semester === targetSemester)?.sgpa || (perf?.currentCGPA - 0.5)).toFixed(2) : (perf?.currentCGPA || 0).toFixed(2),
-        '{grade}': (() => {
-          const c = perf?.currentCGPA || 0;
-          if (c >= 9) return 'O'; if (c >= 8) return 'A+'; if (c >= 7) return 'A'; if (c >= 6) return 'B'; return 'C';
-        })(),
-        '{overall_assessment}': (perf?.currentCGPA >= 8 && attendance?.overallPercentage >= 75) ? 'Fantastic overall performance! Keep it up.' : 'Focus on consistency to improve the overall standing.',
-
-        // Attendance
-        '{attendance}': (() => {
-          if (targetSemester) {
-            return (attendance?.semesterWise.find(s => s.semester === targetSemester)?.attendance || (attendance?.overallPercentage - 5)).toFixed(1);
-          }
-          return (attendance?.overallPercentage || 0).toFixed(1);
-        })(),
-        '{total_classes}': 120,
-        '{present}': (() => {
-          const pct = targetSemester ? (attendance?.semesterWise.find(s => s.semester === targetSemester)?.attendance || 85) : (attendance?.overallPercentage || 85);
-          return Math.round(120 * (pct / 100));
-        })(),
-        '{absent}': (() => {
-          const pct = targetSemester ? (attendance?.semesterWise.find(s => s.semester === targetSemester)?.attendance || 85) : (attendance?.overallPercentage || 85);
-          return 120 - Math.round(120 * (pct / 100));
-        })(),
-        '{comment}': (attendance?.overallPercentage >= 75) ? 'Good attendance standing.' : 'Attendance is below the threshold.',
-
-        // Backlogs
-        '{backlog_count}': acStatus?.numberOfBacklogs || 0,
-        '{backlog_list}': acStatus?.repeatedSubjects?.length > 0 ? acStatus.repeatedSubjects.join(', ') : 'None',
-        '{recommendation}': (acStatus?.numberOfBacklogs > 0) ? 'Advised to attend extra clearing sessions.' : 'Academic path is clear.',
-        '{reexam_date}': 'Expected in next supply cycle.',
-
-        // Fees
-        // Fees - Dynamic from Atlas
-        '{pending_amount}': fin?.pendingFees || 0,
-        '{fee_status}': fin?.feePaymentStatus || 'N/A',
-        '{paid_amount}': (() => {
-          const history = fin?.paymentHistory || [];
-          return history.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-        })(),
-        '{total_fees}': (() => {
-          const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
-          const total = (paid + (fin?.pendingFees || 0));
-          // Voice optimization: Convert 75000 to "75 thousand" etc
-          if (total >= 1000) return `${(total / 1000).toFixed(0)} thousand`;
-          return total;
-        })(),
-        '{payment_status}': fin?.pendingFees === 0 ? 'Fully Paid' : 'Partial/Pending',
-        '{tuition}': '60 thousand',
-        '{development}': '10 thousand',
-        '{exam}': '3 thousand',
-        '{library}': '2 thousand',
-        '{total}': (() => {
-          const paid = (fin?.paymentHistory || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
-          const total = (paid + (fin?.pendingFees || 0));
-          return total >= 1000 ? `${(total / 1000).toFixed(0)} thousand` : total;
-        })(),
-        '{status}': fin?.pendingFees === 0 ? 'Paid' : 'Pending',
-        '{due_date}': '15th of current month',
-        '{receipt_no}': 'VGN-' + Math.floor(Math.random() * 90000 + 10000),
-        '{payment_action}': fin?.pendingFees > 0 ? 'Please proceed to payment portal.' : 'No action required.',
-
-        // Notifications & Events
-        '{upcoming_event}': notify?.upcomingExams?.[0] || 'No major events soon.',
-        '{exam_schedule}': notify?.upcomingExams?.join('\n') || 'Schedule not released.',
-        '{events_list}': 'Annual Tech Fest, Sports Meet',
-        '{holiday_list}': 'Check academic calendar for holidays.',
-        '{announcements}': notify?.academicCalendarUpdates?.[0] || 'Stay tuned for updates.',
-
-        // Profile
-        '{roll_number}': student?.regNumber || 'N/A',
-        '{sports}': 'Active in Cricket/Volleyball',
-        '{clubs}': 'Coding Club, NSS',
-        '{cultural}': 'Music/Dance festivals',
-        '{volunteer}': 'Blood donation camp',
-        '{achievements}': 'Merit Certificate Sem 2',
-
-        // Semester-wise (Filling loops or defaults)
-        '{sem1}': attendance?.semesterWise.find(s => s.semester === 1)?.attendance || 'N/A',
-        '{sem2}': attendance?.semesterWise.find(s => s.semester === 2)?.attendance || 'N/A',
-        '{sem3}': attendance?.semesterWise.find(s => s.semester === 3)?.attendance || 'N/A',
-        '{sem4}': attendance?.semesterWise.find(s => s.semester === 4)?.attendance || 'N/A',
-        '{sem5}': attendance?.semesterWise.find(s => s.semester === 5)?.attendance || 'N/A',
-        '{sem6}': attendance?.semesterWise.find(s => s.semester === 6)?.attendance || 'N/A',
-
-        '{sem1_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 1)?.sgpa || 'N/A',
-        '{sem2_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 2)?.sgpa || 'N/A',
-        '{sem3_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 3)?.sgpa || 'N/A',
-        '{sem4_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 4)?.sgpa || 'N/A',
-        '{sem5_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 5)?.sgpa || 'N/A',
-        '{sem6_cgpa}': perf?.semesterWiseCGPA.find(s => s.semester === 6)?.sgpa || 'N/A',
-
-        '{subject_marks}': targetSemester ? (perf?.subjectWiseMarks.filter(s => s.semester == targetSemester).map(s => `${s.subject}: ${s.marks}`).join(', ') || 'N/A') : 'N/A',
-        '{performance_comment}': 'Analysis of this semester shows steady progress.',
-
-        // Performance Sections (Strong/Weak)
-        '{weak_subjects}': (() => {
-          if (!perf || !perf.subjectWiseMarks || perf.subjectWiseMarks.length === 0) return 'Academic records not found.';
-          let subjects = [...perf.subjectWiseMarks];
-          const sq = targetSemester || student?.semester;
-          let filtered = subjects.filter(s => s.semester == sq);
-
-          // Fallback: If no subjects found for specific semester, show all weak ones
-          let finalSet = filtered.length > 0 ? filtered : subjects;
-
-          const weakOnes = finalSet.sort((a, b) => a.marks - b.marks).slice(0, 2);
-          return weakOnes.map(s => `• ${s.subject} (${s.marks} marks)`).join('\n');
-        })(),
-        '{strong_subjects}': (() => {
-          if (!perf || !perf.subjectWiseMarks || perf.subjectWiseMarks.length === 0) return 'Academic records not found.';
-          let subjects = [...perf.subjectWiseMarks];
-          const sq = targetSemester || student?.semester;
-          let filtered = subjects.filter(s => s.semester == sq);
-
-          // Fallback: If no subjects found for specific semester, show all strong ones
-          let finalSet = filtered.length > 0 ? filtered : subjects;
-
-          const strongOnes = finalSet.sort((a, b) => b.marks - a.marks).slice(0, 2);
-          return strongOnes.map(s => `• ${s.subject} (Score: ${s.marks}/100)`).join('\n');
-        })(),
-        '{recommendations}': '1. Join weekend remedial classes.\n2. Review previous year papers.\n3. Schedule a teacher meeting.',
-
-        // Fees Missing Placeholders
-        '{sem1_fee}': '12500', '{sem1_status}': 'Paid',
-        '{sem2_fee}': '12500', '{sem2_status}': 'Paid',
-        '{sem3_fee}': '12500', '{sem3_status}': 'Paid',
-        '{sem4_fee}': '12500', '{sem4_status}': (fin?.pendingFees < 37500 ? 'Paid' : 'Pending'),
-        '{sem5_fee}': '12500', '{sem5_status}': (fin?.pendingFees < 25000 ? 'Paid' : 'Pending'),
-        '{sem6_fee}': '12500', '{sem6_status}': (fin?.pendingFees < 12500 ? 'Paid' : 'Pending'),
-        '{next_due_date}': 'May 10, 2026',
-        '{next_amount}': fin?.pendingFees > 0 ? (fin.pendingFees / 2).toFixed(0) : '0',
-
-        // Achievements Section
-        '{academic_achievements}': 'Consistent top 10% in Semester 2 and 4.',
-        '{certificates}': '1. Java Fundamentals Certification\n2. Ethical Hacking Workshop',
-        '{awards}': 'Merit Scholarship for Academic Year 2025',
-      };
-
-      // Perform all replacements
-      Object.keys(replacements).forEach(key => {
-        const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        enriched = enriched.replace(regex, replacements[key]);
-      });
-
-      responseText = enriched;
-    }
-
-    // NEW: Smart Fallback to Gemini AI
-    // We trigger if: 
-    // 1. NLP manager couldn't understand (None)
-    // 2. The result is just a generic greeting but the message is long/complex
-    // 3. Confidence score is very low
-    const isGeneric = responseText === t.default || intent === 'greeting';
-    const isComplex = message.split(' ').length > 4;
-    const lowConfidence = result.score < 0.5;
-
-    if ((isGeneric && isComplex || lowConfidence || responseText === t.default) && process.env.GEMINI_API_KEY) {
-      console.log(`Falling back to Gemini AI (Intent: ${intent}, Score: ${result.score})`);
+    if (responseText === t.default && process.env.GEMINI_API_KEY) {
+      console.log(`Falling back to Gemini AI for query: "${message}"`);
       try {
         const { GoogleGenerativeAI } = require("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-        // Gather student context
-        const student = await Models.Student.findOne({ regNumber });
-        const [attendance, perf, fin, acStatus] = await Promise.all([
-          Models.Attendance.findOne({ regNumber }),
-          Models.AcademicPerformance.findOne({ regNumber }),
-          Models.Financial.findOne({ regNumber }),
-          Models.AcademicStatus.findOne({ regNumber })
+        
+        // Fetch all data for Gemini fallback (context heavy) - ONLY when needed
+        const [student, attendance, acStatus, perf, financials] = await Promise.all([
+          Models.Student.findOne({ regNumber }).lean(),
+          Models.Attendance.findOne({ regNumber }).lean(),
+          Models.AcademicStatus.findOne({ regNumber }).lean(),
+          Models.AcademicPerformance.findOne({ regNumber }).lean(),
+          Models.Financial.findOne({ regNumber }).lean()
         ]);
 
-        let context = "You are a helpful AI Academic Assistant. Talk to this parent about their child's progress. Be professional and concise. Use the following student data safely. ";
+        let context = "You are a helpful Academic Assistant. Use the following student data safely to answer the parent. ";
         if (student) {
-          context += `Student Name: ${student.name}, Registration ID: ${student.regNumber}, Current Semester: ${student.semester}, Branch: ${student.branch}. `;
-
-          if (attendance) {
-            context += `Overall Attendance: ${attendance.overallPercentage}%. `;
-            context += "Semester-wise Attendance: " + (attendance.semesterWise || []).map(s => `Sem ${s.semester}: ${s.attendance.toFixed(1)}%`).join(', ') + ". ";
+          context += `Student: ${student.name}, ID: ${student.regNumber}, Branch: ${student.branch}, Current Sem: ${student.semester}. `;
+          if (attendance) context += `Overall Attendance: ${attendance.overallPercentage}%, Sem-wise: ${(attendance.semesterWise||[]).map(s=>`S${s.semester}:${s.attendance}%`).join(',')}. `;
+          if (perf) context += `CGPA: ${perf.currentCGPA}, SGPA-History: ${(perf.semesterWiseCGPA||[]).map(s=>`S${s.semester}:${s.sgpa}`).join(',')}. `;
+          if (financials) {
+            const feeBreakdown = (financials.semesterWiseFees || []).map(f => `Sem ${f.semester}: Total ₹${f.total}, Paid ₹${f.paid}, Due ₹${f.pending}, Status: ${f.status}`).join('; ');
+            context += `Finance: Pending Fees Total ₹${financials.pendingFees}. Breakdown: ${feeBreakdown}. Status: ${financials.feePaymentStatus}, Scholarship: ${financials.scholarshipStatus || 'N/A'}. `;
           }
-
-          if (perf) {
-            context += `Current CGPA: ${perf.currentCGPA}. `;
-            context += "Semester-wise SGPA: " + (perf.semesterWiseCGPA || []).map(s => `Sem ${s.semester}: ${s.sgpa}`).join(', ') + ". ";
-            // Include subjects for detailed questions
-            context += "Subject-wise Performance: " + (perf.subjectWiseMarks || []).map(s => `${s.subject}: ${s.marks} marks (Grade ${s.grade})`).join(', ') + ". ";
-          }
-
-          const intra = await Models.IntraSemesterMarks.findOne({ regNumber });
-          if (intra) {
-            context += "Intra-Semester (Mid-term) Marks: " + (intra.marks || []).map(m => `${m.subject}: Mid1=${m.m1}, Mid2=${m.m2}, Total=${m.total}`).join(', ') + ". ";
-          }
-
-          if (acStatus) {
-            context += `Backlogs: ${acStatus.numberOfBacklogs}. Subjects involved: ${acStatus.repeatedSubjects?.join(', ') || 'None'}. `;
-          }
-
-          if (fin) {
-            context += `Fee Status: ${fin.feePaymentStatus}, Pending Balance: ₹${fin.pendingFees}. Scholarship: ${fin.scholarshipStatus}. `;
-          }
+          if (acStatus) context += `Backlogs: ${acStatus.numberOfBacklogs} in ${acStatus.backlogSubjects?.map(s=>s.subjectName).join(', ') || 'None'}. `;
         }
 
-        const langMap = { hi: 'Hindi', te: 'Telugu', en: 'English' };
-        const prompt = `${context}\nBased on the data above, please answer the following query from the parent. Respond directly and naturally in ${langMap[language] || 'English'}.\nParent Query: "${message}"\nAssistant Response:`;
-
-        // Use gemini-flash-latest (Confirmed working in this environment/key)
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-        const geminiResult = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
-        });
-
-        const geminiText = geminiResult.response.text();
-        if (geminiText) responseText = geminiText;
-      } catch (geminiError) {
-        console.error("Gemini Fallback Error:", geminiError);
-      }
+        const gemResult = await model.generateContent(`${context}\nAnswer naturaly in ${language === 'hi' ? 'Hindi' : (language === 'te' ? 'Telugu' : 'English')}: "${message}"`);
+        const text = gemResult.response.text();
+        if (text) responseText = text;
+      } catch (e) { console.error("Gemini Error:", e); }
     }
-
     res.json({ response: responseText });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error processing chatbot query' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // --- ADMIN ENDPOINTS ---
@@ -1021,51 +545,34 @@ app.post('/api/v1/admin/login', async (req, res) => {
   try {
     const admin = await Models.Admin.findOne({ email });
     if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
-
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
-
     const token = jwt.sign({ id: admin._id, role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ success: true, token, admin: { name: admin.name, email: admin.email } });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/v1/admin/students/add', authenticateAdmin, async (req, res) => {
   try {
     const studentData = req.body;
     const newStudent = await Models.Student.create(studentData);
-
-    // Create placeholders for other data
     await Models.Attendance.create({ regNumber: newStudent.regNumber, overallPercentage: studentData.attendance || 0 });
     await Models.AcademicStatus.create({ regNumber: newStudent.regNumber, numberOfBacklogs: studentData.backlogs || 0 });
     await Models.AcademicPerformance.create({ regNumber: newStudent.regNumber, currentCGPA: studentData.cgpa || 0 });
     await Models.Financial.create({ regNumber: newStudent.regNumber, pendingFees: studentData.fees || 0 });
     await Models.Notification.create({ regNumber: newStudent.regNumber });
-
     res.json({ success: true, student: newStudent });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+  } catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.get('/api/v1/admin/students', authenticateAdmin, async (req, res) => {
-  try {
-    const students = await Models.Student.find();
-    res.json(students);
-  } catch (error) {
-    res.status(500).json({ error: 'Error fetching students' });
-  }
+  try { const students = await Models.Student.find(); res.json(students); }
+  catch (error) { res.status(500).json({ error: 'Error fetching students' }); }
 });
 
 app.put('/api/v1/admin/students/update/:id', authenticateAdmin, async (req, res) => {
-  try {
-    const student = await Models.Student.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json({ success: true, student });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+  try { const student = await Models.Student.findByIdAndUpdate(req.params.id, req.body, { new: true }); res.json({ success: true, student }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.post('/api/v1/admin/send-exam-notification', authenticateAdmin, async (req, res) => {
@@ -1074,17 +581,11 @@ app.post('/api/v1/admin/send-exam-notification', authenticateAdmin, async (req, 
     const students = await Models.Student.find({ regNumber: { $in: regNumbers } });
     for (const student of students) {
       if (student.email) {
-        await sendEmailNotification(
-          student.email,
-          'Academic Notification: Upcoming Exams',
-          `Dear Parent/Student,\n\n${message || 'This is to notify you regarding upcoming examinations.'}\n\nRegards,\nAcademic Office`
-        );
+        await sendEmailNotification(student.email, 'Upcoming Exams', message || 'Notification regarding upcoming examinations.');
       }
     }
     res.json({ success: true, message: 'Notifications sent' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error sending notifications' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Error sending notifications' }); }
 });
 
 app.post('/api/v1/admin/send-attendance-alert', authenticateAdmin, async (req, res) => {
@@ -1092,64 +593,35 @@ app.post('/api/v1/admin/send-attendance-alert', authenticateAdmin, async (req, r
   try {
     const student = await Models.Student.findOne({ regNumber });
     const attendance = await Models.Attendance.findOne({ regNumber });
-
     if (student && student.email && attendance && attendance.overallPercentage < 75) {
-      await sendEmailNotification(
-        student.email,
-        'Academic Alert: Low Attendance',
-        `Dear Parent,\n\nThis is to inform you that your child ${student.name}'s attendance is currently ${attendance.overallPercentage}%, which is below the required 75%. Please ensure regular attendance.\n\nRegards,\nAcademic Office`
-      );
-      res.json({ success: true, message: 'Attendance alert sent' });
-    } else {
-      res.status(400).json({ error: 'Student not found or attendance is sufficient' });
-    }
-  } catch (error) {
-    res.status(500).json({ error: 'Error sending alert' });
-  }
+      await sendEmailNotification(student.email, 'Low Attendance Alert', `Attendance for ${student.name} is ${attendance.overallPercentage}%.`);
+      res.json({ success: true, message: 'Alert sent' });
+    } else { res.status(400).json({ error: 'Sufficient attendance or student not found' }); }
+  } catch (error) { res.status(500).json({ error: 'Error sending alert' }); }
 });
 
 app.delete('/api/v1/admin/students/:id', authenticateAdmin, async (req, res) => {
   try {
     const student = await Models.Student.findByIdAndDelete(req.params.id);
     if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    // Also cleanup other collections
     await Models.Attendance.deleteOne({ regNumber: student.regNumber });
     await Models.AcademicPerformance.deleteOne({ regNumber: student.regNumber });
     await Models.AcademicStatus.deleteOne({ regNumber: student.regNumber });
     await Models.Financial.deleteOne({ regNumber: student.regNumber });
-    await Models.Notification.deleteMany({ regNumber: student.regNumber });
-
-    res.json({ success: true, message: 'Student and related records deleted' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 app.get('/api/v1/admin/marks/:regNumber', authenticateAdmin, async (req, res) => {
-  try {
-    const data = await Models.IntraSemesterMarks.findOne({ regNumber: req.params.regNumber });
-    res.json(data ? data.marks : []);
-  } catch (error) {
-    res.status(500).json({ error: 'Error fetching marks' });
-  }
+  try { const data = await Models.IntraSemesterMarks.findOne({ regNumber: req.params.regNumber }); res.json(data ? data.marks : []); }
+  catch (error) { res.status(500).json({ error: 'Error fetching marks' }); }
 });
 
 app.post('/api/v1/admin/marks/update', authenticateAdmin, async (req, res) => {
   const { regNumber, marks } = req.body;
-  try {
-    await Models.IntraSemesterMarks.findOneAndUpdate(
-      { regNumber },
-      { regNumber, marks },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, message: 'Marks updated successfully' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error updating marks' });
-  }
+  try { await Models.IntraSemesterMarks.findOneAndUpdate({ regNumber }, { regNumber, marks }, { upsert: true, new: true }); res.json({ success: true }); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-});
+app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });

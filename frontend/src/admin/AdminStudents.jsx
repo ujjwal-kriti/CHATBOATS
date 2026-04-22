@@ -23,6 +23,16 @@ const AdminStudents = () => {
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+
+  // Helper to format semester label
+  const getSemesterLabel = (sem) => {
+    if (!sem) return 'N/A';
+    const num = parseInt(sem);
+    if (isNaN(num)) return sem;
+    const year = Math.ceil(num / 2);
+    const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+    return `${year}${suffix} Year - Sem ${num}`;
+  };
   
   const [formData, setFormData] = useState({
     name: '',
@@ -213,7 +223,7 @@ const AdminStudents = () => {
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-700 dark:text-gray-300 font-medium">{student.branch}</p>
-                      <p className="text-xs text-slate-500">Semester {student.semester}</p>
+                      <p className="text-xs text-slate-500">{getSemesterLabel(student.semester)}</p>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col items-center">

@@ -31,10 +31,32 @@ const AttendanceSchema = new mongoose.Schema({
   lowAttendanceAlerts: [String]
 });
 
+const DailyAttendanceSchema = new mongoose.Schema({
+  regNumber: { type: String, required: true, unique: true },
+  attendanceRecords: [{
+    date: String, // YYYY-MM-DD
+    semester: Number,
+    hours: [{
+      hour: Number, // 1 to 8
+      status: { type: String, enum: ['Present', 'Absent', 'Late', 'N/A'] }
+    }]
+  }]
+});
+
 const AcademicStatusSchema = new mongoose.Schema({
   regNumber: { type: String, required: true, unique: true },
   numberOfBacklogs: Number,
-  repeatedSubjects: [String],
+  backlogSubjects: [{
+    subjectName: String,
+    semester: Number,
+    status: { type: String, default: 'Pending' },
+    nextReattemptDate: String
+  }],
+  repeatedSubjects: [{
+    subjectName: String,
+    attemptCount: Number,
+    nextExam: String
+  }],
   incompleteSubjects: [String],
   courseCompletionStatus: String
 });
@@ -44,18 +66,18 @@ const AcademicPerformanceSchema = new mongoose.Schema({
   currentCGPA: Number,
   yearWiseCGPA: [{ year: Number, cgpa: Number }],
   semesterWiseCGPA: [{ semester: Number, sgpa: Number }],
-  subjectWiseMarks: [{ subject: String, grade: String, marks: Number, semester: Number }]
+  subjectWiseMarks: [{ subject: String, grade: String, marks: Number, externalMarks: Number, semester: Number }]
 });
 
 const IntraSemesterMarksSchema = new mongoose.Schema({
   regNumber: { type: String, required: true, unique: true },
-  marks: [{
-    subject: String,
+  semesters: [{
     semester: Number,
-    m1: { type: Number, default: 0 }, // Mid 1
-    m2: { type: Number, default: 0 }, // Mid 2
-    t1: { type: Number, default: 0 }, // Tut 1 / Assignment
-    total: { type: Number, default: 0 }
+    subjects: [String], // ["DBMS", "DLD", ...]
+    exams: [{
+      title: String, // "Module1-PreT1"
+      marks: [mongoose.Schema.Types.Mixed]
+    }]
   }]
 });
 
@@ -70,7 +92,23 @@ const FinancialSchema = new mongoose.Schema({
   regNumber: { type: String, required: true, unique: true },
   feePaymentStatus: String,
   pendingFees: Number,
-  paymentHistory: [{ date: String, amount: Number, receipt: String }],
+  totalFees: Number,
+  lastPaymentSemester: Number,
+  semesterWiseFees: [{
+    semester: Number,
+    total: Number,
+    paid: Number,
+    pending: Number,
+    status: String,
+    lastPaymentDate: String
+  }],
+  paymentHistory: [{
+    date: String,
+    amount: Number,
+    receipt: String,
+    semester: Number,
+    method: { type: String, default: 'Online' }
+  }],
   scholarshipStatus: String
 });
 
@@ -104,7 +142,8 @@ const Models = {
   Communication: mongoose.models.Communication || mongoose.model('Communication', CommunicationSchema),
   Insight: mongoose.models.Insight || mongoose.model('Insight', InsightSchema),
   Admin: mongoose.models.Admin || mongoose.model('Admin', AdminSchema),
-  IntraSemesterMarks: mongoose.models.IntraSemesterMarks || mongoose.model('IntraSemesterMarks', IntraSemesterMarksSchema)
+  IntraSemesterMarks: mongoose.models.IntraSemesterMarks || mongoose.model('IntraSemesterMarks', IntraSemesterMarksSchema),
+  DailyAttendance: mongoose.models.DailyAttendance || mongoose.model('DailyAttendance', DailyAttendanceSchema)
 };
 
 module.exports = Models;

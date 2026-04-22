@@ -31,7 +31,8 @@ async function trainNLP() {
             "show attendance summary",
             "overall attendance percentage",
             "attendance details",
-            "monthly attendance report"
+            "monthly attendance report",
+            "attndce", "atendance", "atendnce", "atndnc", "atendanc", "attandance", "atnd", "attd"
         ],
         hi: [
             "क्या मेरा बच्चा नियमित रूप से क्लास में जाता है?",
@@ -72,6 +73,63 @@ async function trainNLP() {
         ]
     };
 
+    // ==================== 1b. DAILY & HOURLY ATTENDANCE QUERIES ====================
+    const dailyAttendanceQueries = {
+        en: [
+            "was he present on 20th april?",
+            "check status for 20-04-2026",
+            "was my child present in 2nd hour on 20 april?",
+            "status of 2nd hour today",
+            "attendance on 15 march",
+            "was he present in period 1 on 10th feb?",
+            "check 4th period attendance",
+            "what was the subject in 3rd hour yesterday?",
+            "did he attend lab hour on 20 april?",
+            "was he present in ml lab?",
+            "attendance in devops lab yesterday",
+            "status of hour 5 on 22nd march",
+            "attendance for yesterday",
+            "was he present today?",
+            "hour 2 status",
+            "period 3 presence"
+        ],
+        hi: [
+            "क्या वह 20 अप्रैल को उपस्थित था?",
+            "20-04-2026 का स्टेटस चेक करें",
+            "क्या मेरा बच्चा 20 अप्रैल को दूसरे घंटे में उपस्थित था?",
+            "आज के दूसरे घंटे की स्थिति",
+            "15 मार्च को हाजिरी",
+            "क्या वह 10 फरवरी को पहले पीरियड में था?",
+            "चौथे पीरियड की अटेंडेंस चेक करें",
+            "कल तीसरे घंटे में कौन सा विषय था?",
+            "क्या उसने 20 अप्रैल को लैब अटेंड की?",
+            "क्या वह एमएल लैब में प्रेजेंट था?",
+            "कल डेवप्स लैब में अटेंडेंस कैसी थी?"
+        ],
+        te: [
+            "అతను ఏప్రిల్ 20న హాజరయ్యాడా?",
+            "20-04-2026 స్థితిని తనిఖీ చేయండి",
+            "నా బిడ్డ ఏప్రిల్ 20న 2వ గంటలో హాజరయ్యాడా?",
+            "ఈరోజు 2వ గంట స్థితి",
+            "మార్చి 15న హాజరు",
+            "ఫిబ్రవరి 10న 1వ పీరియడ్ లో అతను ఉన్నాడా?",
+            "4వ పీరియడ్ అటెండెన్స్ చెక్ చేయండి",
+            "నిన్న 3వ గంటలో సబ్జెక్ట్ ఏమిటి?",
+            "అతను ఏప్రిల్ 20న ల్యాబ్ కు వెళ్లాడా?",
+            "అతను ML ల్యాబ్ లో ఉన్నాడా?",
+            "నిన్న మోడరన్ ల్యాబ్ అటెండెన్స్ స్థితి"
+        ]
+    };
+
+    // Train intents
+    attendanceQueries.en.forEach(q => manager.addDocument('en', q, 'attendance.status'));
+    attendanceQueries.hi.forEach(q => manager.addDocument('hi', q, 'attendance.status'));
+    attendanceQueries.te.forEach(q => manager.addDocument('te', q, 'attendance.status'));
+
+    dailyAttendanceQueries.en.forEach(q => manager.addDocument('en', q, 'attendance.daily'));
+    dailyAttendanceQueries.hi.forEach(q => manager.addDocument('hi', q, 'attendance.daily'));
+    dailyAttendanceQueries.te.forEach(q => manager.addDocument('te', q, 'attendance.daily'));
+
     // ==================== 2. CGPA / MARKS QUERIES ====================
     const cgpaQueries = {
         en: [
@@ -96,7 +154,8 @@ async function trainNLP() {
             "academic summary",
             "current academic status",
             "grade report",
-            "subject wise marks"
+            "subject wise marks",
+            "cgp", "cpga", "cgpaa", "cgppa", "gpaa", "reslt", "performnce", "mrks"
         ],
         hi: [
             "मेरे बच्चे का सीजीपीए कितना है?",
@@ -201,7 +260,8 @@ async function trainNLP() {
             "fee balance",
             "outstanding fees",
             "fee due amount",
-            "college fee details"
+            "college fee details",
+            "fees", "fess", "feees", "paymnt", "panding fee", "pendng fees"
         ],
         hi: [
             "फीस की स्थिति क्या है?",
@@ -334,7 +394,9 @@ async function trainNLP() {
             "arrears",
             "pending subjects",
             "subjects to clear",
-            "failed exams list"
+            "failed exams list",
+            "back", "re", "clearance", "arrear", "pendings", "total backlogs", "fail list",
+            "backlogs", "backloggs", "bklog", "bcklog", "fail subjects", "falied subjects", "fialed"
         ],
         hi: [
             "क्या कोई बैकलॉग है?",
@@ -351,7 +413,8 @@ async function trainNLP() {
             "फेल",
             "बैक",
             "लंबित विषय",
-            "क्लियर करने वाले विषय"
+            "क्लियर करने वाले विषय",
+            "फैल", "कितने बैक हैं", "बैक लिस्ट", "पेंडिंग"
         ],
         te: [
             "ఏమైనా బ్యాక్లాగ్స్ ఉన్నాయా?",
@@ -367,7 +430,8 @@ async function trainNLP() {
             "ఏవైనా సబ్జెక్టులు మిగిలి ఉన్నాయా?",
             "ఫెయిల్",
             "బ్యాక్లాగ్",
-            "పెండింగ్ సబ్జెక్టులు"
+            "పెండింగ్ సబ్జెక్టులు",
+            "బాకీ", "బ్యాక్", "ఫెయిల్ లిస్ట్"
         ]
     };
 
@@ -626,6 +690,40 @@ async function trainNLP() {
         ]
     };
     
+    // ==================== 11b. CONTACT QUERIES ====================
+    const contactQueries = {
+        en: [
+            "who is the class advisor?", "contact details for teacher", "how to contact faculty?",
+            "who is the mentor?", "advisor email", "phone number of advisor", "faculty contacts",
+            "contact information", "teacher contact", "advisor details"
+        ],
+        hi: [
+            "टीचर का नंबर क्या है?", "क्लास एडवाइजर कौन है?", "फैकल्टी से कैसे संपर्क करें?", "एडवाइजर का ईमेल",
+            "संपर्क जानकारी", "शिक्षक का संपर्क", "एडवाइजर विवरण"
+        ],
+        te: [
+            "క్లాస్ అడ్వైజర్ ఎవరు?", "టీచర్ ఫోన్ నంబర్ ఎంత?", "ఫ్యాకల్టీని ఎలా సంప్రదించాలి?", "అడ్వైజర్ ఈమెయిల్",
+            "సంప్రదింపు సమాచారం", "టీచర్ కాంటాక్ట్", "అడ్వైజర్ వివరాలు"
+        ]
+    };
+
+    const counsellorQueries = {
+        en: [
+            "I want to talk to my child counsellor", "contact for counsellor", "who is the child counsellor?",
+            "need mental health support for student", "counselling services", "talk to doctor",
+            "psychologist contact", "can I speak with the counsellor?", "help from counsellor",
+            "student counselling info", "counselor", "counsellor"
+        ],
+        hi: [
+            "मुझे काउंसलर से बात करनी है", "काउंसलर का संपर्क", "चाइल्ड काउंसलर कौन है?",
+            "छात्र के लिए परामर्श", "डॉक्टर से बात करनी है", "काउंसलर से मदद"
+        ],
+        te: [
+            "నేను కౌన్సిలర్‌తో మాట్లాడాలి", "కౌన్సిలర్ కాంటాక్ట్", "చైల్డ్ కౌన్సిలర్ ఎవరు?",
+            "విద్యార్థి కోసం కౌన్సెలింగ్", "కౌన్సిలర్ సహాయం"
+        ]
+    };
+    
     // ==================== 12. GRAPHS / VISUALS QUERY ====================
     const graphsQueries = {
         en: [
@@ -698,15 +796,6 @@ async function trainNLP() {
             "gpa for second semester", "gpa for third semester", "gpa for fourth semester", "gpa for fifth semester", "gpa for sixth semester",
             "first semester gpa", "second semester gpa", "third semester gpa", "fourth semester gpa", "fifth semester gpa", "sixth semester gpa",
             
-            // Short-form (Small words) variations
-            "sem 1 marks", "sem 2 marks", "sem 3 marks", "sem 4 marks", "sem 5 marks", "sem 6 marks",
-            "marks 1", "marks 2", "marks 3", "marks 4", "marks 5", "marks 6",
-            "s1 marks", "s2 marks", "s3 marks", "s4 marks", "s5 marks", "s6 marks",
-            "sem 1 score", "sem 2 score", "sem 3 score", "sem 4 score", "sem 5 score", "sem 6 score",
-            "sem 1 result", "sem 2 result", "sem 3 result", "sem 4 result", "sem 5 result", "sem 6 result",
-            "r1 marks", "r2 marks", "r3 marks", "r4 marks", "r5 marks", "r6 marks",
-            
-            // Other variations
             "show me the cgpa for semester 1", "how much cgpa in sem 2", "get sem 3 gpa", "semester 4 gpa result", "sem 5 total gpa",
             "cgpa in second semester", "first semester cgpa", "third sem gpa", "fourth sem result", "fifth semester score", "sixth sem grade"
         ],
@@ -731,17 +820,6 @@ async function trainNLP() {
             "सेम 1 रिजल्ट", "सेम 2 रिजल्ट", "सेम 3 रिजल्ट", "सेम 4 रिजल्ट", "सेम 5 रिजल्ट", "सेम 6 रिजल्ट"
         ],
         te: [
-            "సెమ్ 1 లో సిజిపిఎ ఎంత", "సెమ్ 1 సిజిపిఎ", "సెమిస్టర్ 1 సిజిపిఎ చూపించు", "సెమ్ 1 కోసం సిజిపిఎ", "సెమిస్టర్ 1 ప్రదర్శన",
-            "సెమ్ 2 లో సిజిపిఎ ఎంత", "సెమ్ 2 సిజిపిఎ", "సెమిస్టర్ 2 సిజిపిఎ చూపించు", "సెమ్ 2 కోసం సిజిపిఎ", "సెమిస్టర్ 2 ప్రదర్శన",
-            "సెమ్ 3 లో సిజిపిఎ ఎంత", "సెమ్ 3 సిజిపిఎ", "సెమిస్టర్ 3 సిజిపిఎ చూపించు", "సెమ్ 3 కోసం సిజిపిఎ", "సెమిస్టర్ 3 ప్రదర్శన",
-            "సెమ్ 4 లో సిజిపిఎ ఎంత", "సెమ్ 4 సిజిపిఎ", "సెమిస్టర్ 4 సిజిపిఎ చూపించు", "సెమ్ 4 కోసం సిజిపిఎ", "సెమిస్టర్ 4 ప్రదర్శన",
-            "సెమ్ 5 లో సిజిపిఎ ఎంత", "సెమ్ 5 సిజిపిఎ", "సెమిస్టర్ 5 సిజిపిఎ చూపించు", "సెమ్ 5 కోసం సిజిపిఎ", "సెమిస్టర్ 5 ప్రదర్శన",
-            "సెమ్ 6 లో సిజిపిఎ ఎంత", "సెమ్ 6 సిజిపిఎ", "సెమిస్టర్ 6 సిజిపిఎ చూపించు", "సెమ్ 6 కోసం సిజిపిఎ", "సెమిస్టర్ 6 ప్రదర్శన",
-            "సెమిస్టర్ 1 సిజిపిఎ చూపండి", "సెమ్ 2 లో ఎంత సిజిపిఎ ఉంది", "సెమ్ 3 జిపిఎ ఇవ్వు", "సెమిస్టర్ 4 జిపిఎ ఫలితం", "సెమ్ 5 మొత్తం జిపిఎ",
-            
-            // GPA variations in Telugu
-            "సెమ్ 1 లో జిపిఎ ఎంత", "సెమ్ 1 జిపిఎ", "సెమ్ 2 లో జిపిఎ ఎంత", "సెమ్ 2 జిపిఎ",
-            "సెమ్ 3 లో జిపిఎ ఎంత", "సెమ్ 3 జిపిఎ", "సెమ్ 4 లో జిపిఎ ఎంత", "సెమ్ 4 జిపిఎ",
             "సెమ్ 5 లో జిపిఎ ఎంత", "సెమ్ 5 జిపిఎ", "సెమ్ 6 లో జిపిఎ ఎంత", "సెమ్ 6 జిపిఎ",
 
             // Short-form (Small words) Telugu
@@ -895,6 +973,68 @@ async function trainNLP() {
         ]
     };
 
+    const internalMarksQueries = {
+        en: [
+            "m1 marks", "m2 marks", "m1", "m2", "module 1", "module 2", 
+            "internal marks in chemistry", "module 1 marks in chemistry",
+            "chemistry module 1 marks", "chemistry m1 marks",
+            "ml m1", "ml m2", "dbms m1", "cd m1", "ai m1", "blockchain m1",
+            "internal marks", "internal score", "mid marks", "module marks",
+            "granular marks", "sem marks breakdown", "module 1 marks", "m1 marks list",
+            "ml t1 marks", "ml t1", "t1 marks", "t2 marks", "t1", "t2", "module 1 t1"
+        ],
+        hi: [
+            "m1 नंबर", "m2 नंबर", "m1 मार्क्स", "m2 मार्क्स", 
+            "आंतरिक अंक", "इंटरनल नंबर", "मॉड्यूल मार्क्स"
+        ],
+        te: [
+            "m1 మార్కులు", "m2 మార్కులు", "ఇంటర్నల్ మార్కులు", "మాడ్యూల్ మార్కులు"
+        ]
+    };
+
+    const subjectAttendanceQueries = {
+        en: [
+            "is my child attending training session", "training session attendance", 
+            "status of training session", "percentage in training session",
+            "is he in training session", "did she attend training session",
+            "attendance in training", "training attendance",
+            "is my child attending training class", "training class attendance",
+            "traing session", "trainig session", "tarnifing session", 
+            "traing attendance", "traing class", "traning session"
+        ],
+        hi: [
+            "क्या मेरा बच्चा ट्रेनिंग सेशन में जा रहा है", "ट्रेनिंग सेशन अटेंडेंस",
+            "ट्रेनिंग सेशन की उपस्थिति", "ट्रेनिंग क्लास"
+        ],
+        te: [
+            "నా బిడ్డ ట్రైనింగ్ సెషన్‌కు హాజరవుతున్నారా", "ట్రైనింగ్ సెషన్ హాజరు", "ట్రైనింగ్ క్లాస్"
+        ]
+    };
+
+    const dateAttendanceQueries = {
+        en: [
+            "attendance {date}", "present {date}", "absent {date}",
+            "{date} attendance", "{date} status", "{date} h1", "{date} h2",
+            "{date} h3", "{date} h4", "{date} h5", "{date} h6", "{date} h7", "{date} h8",
+            "h1 {date}", "h2 {date}", "h3 {date}", "h4 {date}", "h5 {date}",
+            "day attendance", "date attendance", "daily log",
+            "yesterday attendance", "yesterday status", "today attendance", "attendance today",
+            "yesteerady she attended all classes", "yesteerady", "yestreday",
+            "yesterday she attended all clases", "yesturday", "today", "yesterday",
+            "was my child present on {date}?", "is he present on {date}?",
+            "did my son go to college on {date}?", "was she in college on {date}",
+            "on {date} my child went to college", "status for {date}",
+            "tell me attendance for {date}", "presence on {date}"
+        ],
+        hi: [
+            "{date} हाजिर", "{date} गैर-हाजिर", "{date} उपस्थिति", 
+            "{date} स्टेटस", "{date} अटेंडेंस"
+        ],
+        te: [
+            "{date} హాజరు", "{date} స్టేటస్", "{date} అటెండెన్స్"
+        ]
+    };
+
     const greetingQueries = {
         en: ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "namaste"],
         hi: ["नमस्ते", "नमस्कार", "हैलो", "सुप्रभात"],
@@ -929,6 +1069,7 @@ async function trainNLP() {
     addCategorizedDocs(activitiesQueries, 'activities_query');
     addCategorizedDocs(achievementsQueries, 'achievements_query');
     addCategorizedDocs(studentQueries, 'student_query');
+    addCategorizedDocs(contactQueries, 'contact_query');
     addCategorizedDocs(graphsQueries, 'graphs_query');
     addCategorizedDocs(semCgpaQueries, 'semester_cgpa_query');
     addCategorizedDocs(semAttendanceQueries, 'semester_attendance_query');
@@ -938,6 +1079,16 @@ async function trainNLP() {
     addCategorizedDocs(marksheetQueries, 'marksheet_download');
     addCategorizedDocs(greetingQueries, 'greeting');
     addCategorizedDocs(thanksQueries, 'thanks_query');
+    addCategorizedDocs(internalMarksQueries, 'internal_marks_query');
+    addCategorizedDocs(dateAttendanceQueries, 'date_attendance_query');
+    addCategorizedDocs(subjectAttendanceQueries, 'subject_attendance_query');
+    addCategorizedDocs(counsellorQueries, 'counsellor_query');
+
+    // ==================== ADD ENTITIES ====================
+    manager.addRegexEntity('module', 'en', /m1|module\s*1/i);
+    manager.addRegexEntity('module', 'en', /m2|module\s*2/i);
+    manager.addRegexEntity('hour', 'en', /h[1-8]|(?:1st|2nd|3rd|4th|5th|6th|7th|8th)\s*(?:hour|period|class)/i);
+    manager.addRegexEntity('subject', 'en', /machine learning|ml|compiler design|cd|dbms|ai|artificial intelligence|blockchain|iot|deep learning|software testing/i);
 
     // ==================== ADD ANSWERS FOR ALL INTENTS ====================
     
@@ -952,9 +1103,9 @@ async function trainNLP() {
     manager.addAnswer('te', 'cgpa_query', '🎓 **అకడమిక్ పెర్ఫార్మెన్స్**\n\nప్రస్తుత CGPA: {cgpa}/10\n\nసెమిస్టర్ వారీ CGPA:\n• సెమ్ 1: {sem1_cgpa}\n• సెమ్ 2: {sem2_cgpa}\n• సెమ్ 3: {sem3_cgpa}\n• సెమ్ 4: {sem4_cgpa}\n• సెమ్ 5: {sem5_cgpa}\n• సెమ్ 6: {sem6_cgpa}\n\n{comment}');
 
     // 3. Fees
-    manager.addAnswer('en', 'fees_query', '💰 **Fee Status**\n\n📊 Summary:\n• Total Fees: ₹{total_fees}\n• Paid Amount: ₹{paid_amount}\n• Pending Amount: ₹{pending_amount}\n• Payment Status: {payment_status}\n\n📅 Semester-wise:\n• Sem 1: ₹{sem1_fee} - {sem1_status}\n• Sem 2: ₹{sem2_fee} - {sem2_status}\n• Sem 3: ₹{sem3_fee} - {sem3_status}\n• Sem 4: ₹{sem4_fee} - {sem4_status}\n• Sem 5: ₹{sem5_fee} - {sem5_status}\n• Sem 6: ₹{sem6_fee} - {sem6_status}\n\n⏰ Next Due: {next_due_date} - ₹{next_amount}\n💳 Payment Options: Online Portal, UPI, Net Banking, Campus Counter');
-    manager.addAnswer('hi', 'fees_query', '💰 **फीस स्थिति**\n\n📊 सारांश:\n• कुल फीस: ₹{total_fees}\n• जमा राशि: ₹{paid_amount}\n• बकाया राशि: ₹{pending_amount}\n• भुगतान स्थिति: {payment_status}\n\n📅 सेमेस्टर-वार:\n• सेम 1: ₹{sem1_fee} - {sem1_status}\n• सेम 2: ₹{sem2_fee} - {sem2_status}\n• सेम 3: ₹{sem3_fee} - {sem3_status}\n• सेम 4: ₹{sem4_fee} - {sem4_status}\n• सेम 5: ₹{sem5_fee} - {sem5_status}\n• सेम 6: ₹{sem6_fee} - {sem6_status}\n\n⏰ अगली देय तिथि: {next_due_date} - ₹{next_amount}\n💳 भुगतान विकल्प: ऑनलाइन पोर्टल, यूपीआई, नेट बैंकिंग, कैंपस काउंटर');
-    manager.addAnswer('te', 'fees_query', '💰 **ఫీజు స్థితి**\n\n📊 సారాంశం:\n• మొత్తం ఫీజు: ₹{total_fees}\n• చెల్లించిన మొత్తం: ₹{paid_amount}\n• బాకీ మొత్తం: ₹{pending_amount}\n• చెల్లింపు స్థితి: {payment_status}\n\n📅 సెమిస్టర్ వారీ:\n• సెమ్ 1: ₹{sem1_fee} - {sem1_status}\n• సెమ్ 2: ₹{sem2_fee} - {sem2_status}\n• సెమ్ 3: ₹{sem3_fee} - {sem3_status}\n• సెమ్ 4: ₹{sem4_fee} - {sem4_status}\n• సెమ్ 5: ₹{sem5_fee} - {sem5_status}\n• సెమ్ 6: ₹{sem6_fee} - {sem6_status}\n\n⏰ తదుపరి గడువు: {next_due_date} - ₹{next_amount}\n💳 చెల్లింపు ఎంపికలు: ఆన్‌లైన్ పోర్టల్, యూపీఐ, నెట్ బ్యాంకింగ్, క్యాంపస్ కౌంటర్');
+    manager.addAnswer('en', 'fees_query', '💰 **Fee Status Report**\n\n📊 **OVERVIEW**\n• Total Fees: ₹{total_fees}\n• Paid Amount: ₹{paid_amount}\n• Pending: **₹{pending_amount}**\n\n📅 **SEMESTER BREAKDOWN**\n• Sem 1: ₹{sem1_fee} ({sem1_status})\n• Sem 2: ₹{sem2_fee} ({sem2_status})\n• Sem 3: ₹{sem3_fee} ({sem3_status})\n• Sem 4: ₹{sem4_fee} ({sem4_status})\n• Sem 5: ₹{sem5_fee} ({sem5_status})\n• Sem 6: ₹{sem6_fee} ({sem6_status})\n\n⏰ **NEXT DUE**\n• Date: {next_due_date}\n• Amount: ₹{next_amount}\n\n💳 *Payment Options: UPI, Net Banking, Campus Counter*');
+    manager.addAnswer('hi', 'fees_query', '💰 **फीस स्टेटस रिपोर्ट**\n\n📊 **सारांश**\n• कुल फीस: ₹{total_fees}\n• जमा राशि: ₹{paid_amount}\n• बकाया: **₹{pending_amount}**\n\n📅 **सेमेस्टर विवरण**\n• सेमेस्टर 1: ₹{sem1_fee} ({sem1_status})\n• सेमेस्टर 2: ₹{sem2_fee} ({sem2_status})\n• सेमेस्टर 3: ₹{sem3_fee} ({sem3_status})\n• सेमेस्टर 4: ₹{sem4_fee} ({sem4_status})\n• सेमेस्टर 5: ₹{sem5_fee} ({sem5_status})\n• सेमेस्टर 6: ₹{sem6_fee} ({sem6_status})\n\n⏰ **अगली किश्त**\n• तारीख: {next_due_date}\n• राशि: ₹{next_amount}\n\n💳 *भुगतान विकल्प: यूपीआई, नेट बैंकिंग, कैंपस काउंटर*');
+    manager.addAnswer('te', 'fees_query', '💰 **ఫీజు స్టేటస్ రిపోర్ట్**\n\n📊 **సారాంశం**\n• మొత్తం ఫీజు: ₹{total_fees}\n• చెల్లించినవి: ₹{paid_amount}\n• బాకీ: **₹{pending_amount}**\n\n📅 **సెమిస్టర్ల వారీగా**\n• సెమిస్టర్ 1: ₹{sem1_fee} ({sem1_status})\n• సెమిస్టర్ 2: ₹{sem2_fee} ({sem2_status})\n• సెమిస్టర్ 3: ₹{sem3_fee} ({sem3_status})\n• సెమిస్టర్ 4: ₹{sem4_fee} ({sem4_status})\n• సెమిస్టర్ 5: ₹{sem5_fee} ({sem5_status})\n• సెమిస్టర్ 6: ₹{sem6_fee} ({sem6_status})\n\n⏰ **తదుపరి గడువు**\n• తేదీ: {next_due_date}\n• మొత్తం: ₹{next_amount}\n\n💳 *చెల్లింపు విధానం: UPI, నెట్ బ్యాంకింగ్, క్యాంపస్ కౌంటర్*');
 
     // 4. Fees Deadline
     manager.addAnswer('en', 'fees_deadline_query', '📅 **Fee Deadlines**\n\n• Next Due Date: {next_due_date}\n• Amount: ₹{next_amount}\n• Late Fee Applied After: {late_fee_date}\n\n💡 Tip: Pay before deadline to avoid late fees!');
@@ -1001,6 +1152,15 @@ async function trainNLP() {
     manager.addAnswer('hi', 'student_query', '👤 **छात्र प्रोफाइल**\n\nनाम: {name}\nरोल नंबर: {roll_number}\nपंजीकरण संख्या: {reg_number}\nशाखा: {branch}\nवर्तमान सेमेस्टर: {semester}\nवर्ष: {year}\nईमेल: {email}\nसंपर्क: {contact}');
     manager.addAnswer('te', 'student_query', '👤 **విద్యార్థి ప్రొఫైల్**\n\nపేరు: {name}\nరోల్ నంబర్: {roll_number}\nరిజిస్ట్రేషన్ నంబర్: {reg_number}\nబ్రాంచ్: {branch}\nప్రస్తుత సెమిస్టర్: {semester}\nసంవత్సరం: {year}\nఇమెయిల్: {email}\nసంప్రదింపు: {contact}');
 
+    // 11b. Contacts
+    manager.addAnswer('en', 'contact_query', '📞 **Quick Contacts**\n\n**Class Advisor:**\n• Name: {advisor_name}\n• Email: {advisor_email}\n• Phone: {advisor_phone}\n\n**Other Contacts:**\n{faculty_contact}');
+    manager.addAnswer('hi', 'contact_query', '📞 **त्वरित संपर्क**\n\n**क्लास एडवाइजर:**\n• नाम: {advisor_name}\n• ईमेल: {advisor_email}\n• फोन: {advisor_phone}\n\n**अन्य संपर्क:**\n{faculty_contact}');
+    manager.addAnswer('te', 'contact_query', '📞 **త్వరిత సంప్రదింపులు**\n\n**క్లాస్ అడ్వైజర్:**\n• పేరు: {advisor_name}\n• ఈమెయిల్: {advisor_email}\n• ఫోన్: {advisor_phone}\n\n**ఇతర సంప్రదింపులు:**\n{faculty_contact}');
+
+    manager.addAnswer('en', 'counsellor_query', '🤝 **Student Counselling Support**\n\nWe provide professional counselling services for student well-being. You can contact our counsellor directly:\n\n👤 **Counsellor:** Dr. Emily Watson\n📞 **Phone:** **+1 (555) 234-5678**\n✉️ **Email:** e.watson@university.edu\n\nYou can also find these details in the **Quick Contacts** section of your Dashboard.');
+    manager.addAnswer('hi', 'counsellor_query', '🤝 **छात्र परामर्श सहायता**\n\nहम छात्र कल्याण के लिए पेशेवर परामर्श सेवाएं प्रदान करते हैं। आप सीधे हमारे काउंसलर से संपर्क कर सकते हैं:\n\n👤 **काउंसलर:** डॉ. एमिली वाटसन\n📞 **फोन:** **+1 (555) 234-5678**\n✉️ **ईमेल:** e.watson@university.edu\n\nआप ये विवरण अपने डैशबोर्ड के **Quick Contacts** अनुभाग में भी पा सकते हैं।');
+    manager.addAnswer('te', 'counsellor_query', '🤝 **విద్యార్థి కౌన్సెలింగ్ సపోర్ట్**\n\nమేము విద్యార్థుల సంక్షేమం కోసం వృత్తిపరమైన కౌన్సెలింగ్ సేవలను అందిస్తాము. మీరు మా కౌన్సెలర్‌ను నేరుగా సంప్రదించవచ్చు:\n\n👤 **కౌన్సిలర్:** డాక్టర్ ఎమిలీ వాట్సన్\n📞 **ఫోన్:** **+1 (555) 234-5678**\n✉️ **ఈమెయిల్:** e.watson@university.edu\n\nమీరు ఈ వివరాలను మీ డ్యాష్‌బోర్డ్‌లోని **Quick Contacts** విభాగంలో కూడా చూడవచ్చు.');
+
     // 12. Graphs
     manager.addAnswer('en', 'graphs_query', '📊 **Visual Analytics**\n\nYou can view the following charts in the Dashboard:\n• CGPA Trend Chart (Sem 1-6)\n• Attendance Percentage Graph\n• Subject-wise Performance\n• Fee Payment Timeline\n\nNavigate to Dashboard → Analytics section to view all graphs.');
     manager.addAnswer('hi', 'graphs_query', '📊 **विजुअल एनालिटिक्स**\n\nआप डैशबोर्ड में निम्न चार्ट देख सकते हैं:\n• सीजीपीए ट्रेंड चार्ट (सेम 1-6)\n• उपस्थिति प्रतिशत ग्राफ\n• विषय-वार प्रदर्शन\n• फीस भुगतान टाइमलाइन\n\nसभी ग्राफ देखने के लिए डैशबोर्ड → एनालिटिक्स सेक्शन पर जाएं।');
@@ -1031,6 +1191,8 @@ async function trainNLP() {
     manager.addAnswer('en', 'marksheet_download', '📄 **Download Marksheet**\n\nTo download marksheet:\n1. Go to Dashboard\n2. Select "Performance" section\n3. Click on "Download PDF" button\n4. Select semester\n5. Save the file\n\nAlternatively, you can request the admin for official transcripts.');
     manager.addAnswer('en', 'greeting', '👋 Hello! I am your Academic Assistant. I can help you with:\n• Attendance tracking\n• CGPA & performance\n• Fee status & deadlines\n• Backlog information\n• Exam schedules\n• Student profile\n\nHow can I help you today?');
     manager.addAnswer('en', 'thanks_query', '😊 You\'re welcome! Feel free to ask if you need any more help. Have a great day!');
+
+    // Internal Marks and Date Attendance are handled by the Smart AI fallback in server.js
 
     // Hindi Answers
     manager.addAnswer('hi', 'dashboard_navigation', '📱 **डैशबोर्ड नेविगेशन**\n\nमुख्य अनुभाग:\n• अवलोकन - छात्र सारांश देखें\n• उपस्थिति - उपस्थिति ट्रैक करें\n• प्रदर्शन - सीजीपीए और अंक\n• बैकलॉग - फेल विषय\n• फीस स्थिति - भुगतान विवरण\n• अपडेट्स - समाचार और कार्यक्रम\n• एआई सहायक - 24/7 सहायता\n\nविवरण देखने के लिए साइडबार से कोई भी अनुभाग चुनें।');

@@ -180,6 +180,7 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
     if (!student) return res.status(404).json({ error: 'Number mismatch. Try again.' });
 
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log(`[OTP DEBUG] Generated OTP for ${regNumber}: ${generatedOtp}`);
     const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
     otpCache.set(cacheKey, generatedOtp);
 

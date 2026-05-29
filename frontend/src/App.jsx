@@ -31,7 +31,7 @@ function Placeholder({ title }) {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />

@@ -15,7 +15,24 @@ const semesterSubjects = {
 
 async function seedData() {
   try {
-    const workbook = xlsx.readFile(path.join(__dirname, '../../Student_Profile_System.xlsx'));
+    const fs = require('fs');
+    let excelPath = '';
+    const possiblePaths = [
+      path.join(__dirname, '../../Student_Profile_System.xlsx'),
+      path.join(__dirname, '../Student_Profile_System.xlsx'),
+      path.join(__dirname, './Student_Profile_System.xlsx')
+    ];
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        excelPath = p;
+        break;
+      }
+    }
+    if (!excelPath) {
+      throw new Error(`Could not find Student_Profile_System.xlsx. Searched in:\n${possiblePaths.join('\n')}`);
+    }
+    console.log(`Found Excel file at: ${excelPath}`);
+    const workbook = xlsx.readFile(excelPath);
 
     const profileData = xlsx.utils.sheet_to_json(workbook.Sheets['Student_Profile']);
     const financeData = xlsx.utils.sheet_to_json(workbook.Sheets['Finance']);

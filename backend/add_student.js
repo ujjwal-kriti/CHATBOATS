@@ -17,9 +17,9 @@ async function addStudent() {
     console.log('Connected to MongoDB Atlas');
 
     const regNumber = '231FA04867';
-    const phone = '8688611404';
-    const name = 'Akash Bandaru';
-    const email = 'akash.bandaru@college.edu';
+    const phone = '9912514034';
+    const name = 'phani sir';
+    const email = 'svrphanikumar@gmail.com';
     const branch = 'CSE';
     const semester = 6;
 

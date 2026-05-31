@@ -7,14 +7,15 @@ async function test() {
     const res = await axios.get('https://www.fast2sms.com/dev/bulkV2', {
       params: {
         authorization: fast2smsKey,
-        variables_values: '999999',
-        route: 'otp',
-        numbers: '8688611404'
+        route: 'q',
+        message: 'Your login verification code is 999999. Valid for 5 minutes.',
+        numbers: '8688611404',
+        language: 'english'
       }
     });
-    console.log('Fast2SMS OTP Response:', res.data);
+    console.log('Fast2SMS Quick SMS Response:', res.data);
   } catch (error) {
-    console.error('Fast2SMS OTP Error:', error.response ? error.response.data : error.message);
+    console.error('Fast2SMS Quick SMS Error:', error.response ? error.response.data : error.message);
   }
 }
 

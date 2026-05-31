@@ -191,8 +191,7 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
     const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
     const fast2smsKey = process.env.FAST2SMS_API_KEY;
 
-    const smsMessage = `Your secure login OTP for the Academic Monitoring System is: ${generatedOtp}. Valid for 5 minutes.`;
-
+    const smsMessage = `Your secure login code for the Academic Monitoring System is: ${generatedOtp}. Valid for 5 minutes.`;
     if (fast2smsKey) {
       try {
         await axios.get('https://www.fast2sms.com/dev/bulkV2', {
@@ -200,8 +199,8 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
             authorization: fast2smsKey,
             route: 'q',
             message: smsMessage,
-            language: 'english',
-            numbers: student.phone
+            numbers: student.phone,
+            language: 'english'
           }
         });
         console.log(`[SMS] Fast2SMS Quick SMS sent successfully to ${student.phone}`);

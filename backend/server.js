@@ -11,6 +11,7 @@ const axios = require('axios');
 const { NlpManager } = require('node-nlp');
 const { initCronJobs } = require('./cronJobs');
 const { sendEmailNotification } = require('./emailService');
+const { admin, isFirebaseInitialized } = require('./firebaseAdmin');
 
 const app = express();
 
@@ -179,63 +180,79 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
 
     if (!student) return res.status(404).json({ error: 'Number mismatch. Try again.' });
 
-    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    console.log(`[OTP DEBUG] Generated OTP for ${regNumber}: ${generatedOtp}`);
-    const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
-    otpCache.set(cacheKey, generatedOtp);
+    let responseMsg = 'Verification successful. Proceed with Firebase SMS.';
+    let generatedOtp = null;
 
-    const fast2smsKey = process.env.FAST2SMS_API_KEY;
-    if (fast2smsKey) {
-      try {
-        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
-          params: {
-            authorization: fast2smsKey,
-            variables_values: generatedOtp,
-            route: 'otp',
-            numbers: student.phone
-          }
-        });
-      } catch (smsErr) {
-        console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
-      }
-    }
-
-    if (student.email) {
-      sendEmailNotification(
-        student.email,
-        'Your Secure Login OTP',
-        `Hello ${student.name},\n\nYour one-time password (OTP) for the Academic Monitoring System is: ${generatedOtp}\n\nThis OTP is valid for 5 minutes.\n\nRegards,\nSecurity Team`
-      ).catch(err => console.error('Email failed in background:', err));
+    if (!isFirebaseInitialized) {
+      // In simulation mode, generate a mock OTP
+      generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      console.log(`[FIREBASE SIMULATION OTP] Generated OTP for ${regNumber}: ${generatedOtp}`);
+      
+      const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
+      otpCache.set(cacheKey, generatedOtp);
+      responseMsg = `[SIMULATION] Verification successful. OTP is ${generatedOtp}`;
     }
 
     res.json({
       success: true,
-      message: `OTP sent successfully to ${student.email || 'your registered email'}.`
+      message: responseMsg,
+      firebaseSimulated: !isFirebaseInitialized,
+      simulatedOtp: !isFirebaseInitialized ? generatedOtp : undefined
     });
 
   } catch (err) {
-    res.status(500).json({ error: 'Server error generating OTP' });
+    res.status(500).json({ error: 'Server error during phone verification' });
   }
 });
 
 app.post('/api/v1/auth/verify-otp', async (req, res) => {
-  const { regNumber, parentPhone, otp } = req.body;
+  const { regNumber, parentPhone, otp, idToken } = req.body;
   try {
     const cleanPhone = parentPhone.replace(/\s/g, '').trim();
     const cleanReg = regNumber.trim().toLowerCase();
-    const cacheKey = `${cleanReg}_${cleanPhone}`;
-    const storedOtp = otpCache.get(cacheKey);
-
-    if (!storedOtp) return res.status(401).json({ error: 'OTP expired or not found.' });
-    if (storedOtp !== otp.trim()) return res.status(401).json({ error: 'Incorrect OTP.' });
-
-    otpCache.del(cacheKey);
     const student = await Models.Student.findOne({ regNumber: new RegExp('^' + regNumber.trim() + '$', 'i'), phone: cleanPhone });
     if (!student) return res.status(404).json({ error: 'Session expired or mismatch.' });
 
+    if (idToken) {
+      // Real Firebase Verification
+      if (!isFirebaseInitialized) {
+        return res.status(400).json({ error: 'Firebase Admin not configured on server.' });
+      }
+      
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const verifiedPhone = decodedToken.phone_number; // e.g. "+918709870656"
+        
+        // Normalize and compare
+        const cleanVerified = verifiedPhone.replace(/^\+91/, '').replace(/^\+1/, '').replace(/\s+/g, '');
+        const cleanStudent = student.phone.replace(/^\+91/, '').replace(/^\+1/, '').replace(/\s+/g, '');
+        
+        if (cleanVerified !== cleanStudent) {
+          return res.status(401).json({ error: 'Verified phone number does not match registered phone.' });
+        }
+      } catch (firebaseErr) {
+        console.error('Firebase Token Verification Failed:', firebaseErr);
+        return res.status(401).json({ error: 'Invalid or expired Firebase verification code.' });
+      }
+    } else if (otp) {
+      // Simulated local OTP Verification
+      const cacheKey = `${cleanReg}_${cleanPhone}`;
+      const storedOtp = otpCache.get(cacheKey);
+
+      if (!storedOtp) return res.status(401).json({ error: 'OTP expired or not found.' });
+      if (storedOtp !== otp.trim()) return res.status(401).json({ error: 'Incorrect OTP.' });
+
+      otpCache.del(cacheKey);
+    } else {
+      return res.status(400).json({ error: 'Verification code or token required.' });
+    }
+
     const token = signStudentToken(student.regNumber);
     res.json({ message: 'Login successful', token, student: { regNumber: student.regNumber, name: student.name, branch: student.branch, semester: student.semester, phone: student.phone } });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { 
+    console.error('Verify OTP error:', err);
+    res.status(500).json({ error: 'Server error' }); 
+  }
 });
 
 // --- STUDENT DATA ENDPOINTS ---
@@ -294,7 +311,7 @@ app.get('/api/v1/student/attendance', authenticateToken, async (req, res) => {
     if (targetSemester) {
       const semAtt = data.semesterWise.find(s => s.semester === targetSemester);
       if (semAtt) pct = semAtt.attendance.toFixed(1);
-      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester-1)*5 && subjects.indexOf(s) < targetSemester*5));
+      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester - 1) * 5 && subjects.indexOf(s) < targetSemester * 5));
     } else {
       subjects = (data.semesterWise || []).map(s => ({ subject: `Semester ${s.semester}`, attendance: Number(s.attendance.toFixed(1)) }));
     }
@@ -333,7 +350,7 @@ app.get('/api/v1/student/performance', authenticateToken, async (req, res) => {
     if (targetSemester) {
       const semPerf = data.semesterWiseCGPA.find(s => s.semester === targetSemester);
       if (semPerf) cgpa = semPerf.sgpa;
-      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester-1)*5 && subjects.indexOf(s) < targetSemester*5));
+      subjects = subjects.filter(s => s.semester === targetSemester || (subjects.length === 30 && subjects.indexOf(s) >= (targetSemester - 1) * 5 && subjects.indexOf(s) < targetSemester * 5));
     } else {
       subjects = (data.semesterWiseCGPA || []).map(s => ({ subject: `Semester ${s.semester}`, marks: Number((s.sgpa * 10).toFixed(1)), grade: 'N/A' }));
     }
@@ -367,8 +384,8 @@ app.get('/api/v1/student/insights', authenticateToken, async (req, res) => {
       const subjects = perfData.subjectWiseMarks.filter(s => s.semester === targetSemester);
       if (subjects.length > 0) {
         const sorted = [...subjects].sort((a, b) => b.marks - a.marks);
-        strong = [sorted[0].subject]; weak = [sorted[sorted.length-1].subject];
-        suggestions = sorted[sorted.length-1].marks < 60 ? [`Focus on ${sorted[sorted.length-1].subject} - score is low.`] : [`Good work in ${sorted[0].subject}!`];
+        strong = [sorted[0].subject]; weak = [sorted[sorted.length - 1].subject];
+        suggestions = sorted[sorted.length - 1].marks < 60 ? [`Focus on ${sorted[sorted.length - 1].subject} - score is low.`] : [`Good work in ${sorted[0].subject}!`];
       }
     }
     res.json({ insights: { strongSubjects: strong, weakSubjects: weak, improvementSuggestions: suggestions }, communication: comms });
@@ -438,9 +455,9 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
 
     const semMatch = lower.match(/(?:sem|semester|सेम|సెమ్)\s*(\d)/i);
     const targetSemester = semMatch ? parseInt(semMatch[1], 10) : null;
-    const dateMatch = lower.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/) || 
-                      lower.match(/(\d{1,2})(?:st|nd|rd|th)?\s+\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b(?:\s+(\d{2,4}))?/) ||
-                      lower.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?/);
+    const dateMatch = lower.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/) ||
+      lower.match(/(\d{1,2})(?:st|nd|rd|th)?\s+\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b(?:\s+(\d{2,4}))?/) ||
+      lower.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?/);
     const hourMatch = lower.match(/(\d)(?:st|nd|rd|th)?\s+(?:hour|period|గంట|పీరియడ్)/) || lower.match(/(?:hour|period|గంట|పీరిयడ్)\s+(\d)/);
     const isDateQueryPriority = !!(dateMatch || lower.includes('today') || lower.includes('yesterday'));
 
@@ -449,18 +466,18 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
 
       // Handle Date Ranges (e.g., from Jan 1 to April 20)
       const rangeMatch = lower.match(/(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+)/i);
-      
+
       if (rangeMatch && dailyLogs) {
         const parseDateString = (str) => {
-          const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-          const m = str.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/) || 
-                    str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b(?:\s+(\d{2,4}))?/) ||
-                    str.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?/);
+          const months = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+          const m = str.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/) ||
+            str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b(?:\s+(\d{2,4}))?/) ||
+            str.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?/);
           if (!m) return null;
           let y = (m[3] || "2026").length === 2 ? `20${m[3]}` : (m[3] || "2026");
-          if (isNaN(m[1])) return `${y}-${months[m[1].toLowerCase().substring(0,3)]}-${m[2].padStart(2,'0')}`;
-          if (isNaN(m[2])) return `${y}-${months[m[2].toLowerCase().substring(0,3)]}-${m[1].padStart(2,'0')}`;
-          return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+          if (isNaN(m[1])) return `${y}-${months[m[1].toLowerCase().substring(0, 3)]}-${m[2].padStart(2, '0')}`;
+          if (isNaN(m[2])) return `${y}-${months[m[2].toLowerCase().substring(0, 3)]}-${m[1].padStart(2, '0')}`;
+          return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
         };
 
         const startDate = parseDateString(rangeMatch[1]);
@@ -469,8 +486,8 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         if (startDate && endDate) {
           const student = await Models.Student.findOne({ regNumber }).lean();
           const sSem = student?.semester || 6;
-          const subjectsList = { 1: ['Math-I','English','Physics','Prog','Discrete'], 6: ['ML','Big Data','Cloud','Cyber','Training'] }[sSem] || ['Sub1','Sub2','Sub3','Sub4','Sub5'];
-          
+          const subjectsList = { 1: ['Math-I', 'English', 'Physics', 'Prog', 'Discrete'], 6: ['ML', 'Big Data', 'Cloud', 'Cyber', 'Training'] }[sSem] || ['Sub1', 'Sub2', 'Sub3', 'Sub4', 'Sub5'];
+
           const records = dailyLogs.attendanceRecords
             .filter(r => r.date >= startDate && r.date <= endDate)
             .sort((a, b) => a.date.localeCompare(b.date));
@@ -483,52 +500,52 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
             let table = `📊 **ATTENDANCE SUMMARY: ${percentage}%**\n`;
             table += `> 📅 **Range:** ${startDate} to ${endDate}\n`;
             table += `> 🏫 **Total Days:** ${totalDays} | ✅ **Present:** ${presentCount}\n\n`;
-            
+
             // Pad headers to ensure alignment with emojis
             const paddedHeaders = subjectsList.map(s => {
-               const label = s.toUpperCase();
-               return label.length < 6 ? label.padEnd(6, ' ') : label;
+              const label = s.toUpperCase();
+              return label.length < 6 ? label.padEnd(6, ' ') : label;
             });
 
             table += `| DATE       | ${paddedHeaders.join(' | ')} |\n`;
             table += `| :--------- | ${paddedHeaders.map(() => ':---:').join(' | ')} |\n`;
-            
-            records.slice(-31).forEach(r => { 
+
+            records.slice(-31).forEach(r => {
               const dateObj = new Date(r.date);
               const formattedDate = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).padEnd(10, ' ');
-              
+
               const row = subjectsList.map((s, idx) => {
                 const h = r.hours.find(hr => hr.hour === (idx + 1));
                 return h?.status === 'Present' ? '  ✅  ' : '  ❌  ';
               });
               table += `| **${formattedDate}** | ${row.join('|')} |\n`;
             });
-            
+
             if (records.length > 31) table += `\n*Note: Showing most recent 31 days. Full history available in reports.*`;
             responseText = table;
           } else {
             responseText = `No attendance records found between **${startDate}** and **${endDate}**.`;
           }
         }
-      } 
+      }
       else {
         let targetDate = "";
         if (dateMatch) {
-           const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-           if (!isNaN(dateMatch[1]) && isNaN(dateMatch[2])) {
-             const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
-             targetDate = `${year}-${months[dateMatch[2].toLowerCase().substring(0, 3)]}-${dateMatch[1].padStart(2,'0')}`;
-           } 
-           else if (isNaN(dateMatch[1]) && !isNaN(dateMatch[2])) {
-             const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
-             targetDate = `${year}-${months[dateMatch[1].toLowerCase().substring(0, 3)]}-${dateMatch[2].padStart(2,'0')}`;
-           }
-           else {
-             const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
-             targetDate = `${year}-${dateMatch[2].padStart(2,'0')}-${dateMatch[1].padStart(2,'0')}`;
-           }
+          const months = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+          if (!isNaN(dateMatch[1]) && isNaN(dateMatch[2])) {
+            const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
+            targetDate = `${year}-${months[dateMatch[2].toLowerCase().substring(0, 3)]}-${dateMatch[1].padStart(2, '0')}`;
+          }
+          else if (isNaN(dateMatch[1]) && !isNaN(dateMatch[2])) {
+            const year = (dateMatch[3] || "2026").length === 2 ? `20${dateMatch[3]}` : (dateMatch[3] || "2026");
+            targetDate = `${year}-${months[dateMatch[1].toLowerCase().substring(0, 3)]}-${dateMatch[2].padStart(2, '0')}`;
+          }
+          else {
+            const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
+            targetDate = `${year}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+          }
         } else if (lower.match(/\btoday\b/)) { targetDate = new Date().toISOString().split('T')[0]; }
-        else if (lower.match(/\b(yesterday|yesteerady|yestreday|yesturday)\b/)) { const d = new Date(); d.setDate(d.getDate()-1); targetDate = d.toISOString().split('T')[0]; }
+        else if (lower.match(/\b(yesterday|yesteerady|yestreday|yesturday)\b/)) { const d = new Date(); d.setDate(d.getDate() - 1); targetDate = d.toISOString().split('T')[0]; }
 
         if (dailyLogs && targetDate) {
           const HOLIDAYS = { '2023-01-26': 'Republic Day', '2024-01-26': 'Republic Day', '2025-01-26': 'Republic Day', '2026-01-26': 'Republic Day' };
@@ -536,21 +553,21 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
           else {
             const record = dailyLogs.attendanceRecords.find(r => r.date === targetDate);
             if (record) {
-               const student = await Models.Student.findOne({ regNumber }).lean();
-               const getSub = (h, s) => {
-                 const subs = { 1: {theory:['Math-I','English','Physics','Programming','Discrete'], labs:['MATH','ENG','PHY']}, 6: {theory:['ML','Big Data','Cloud','Cyber','Training Session'], labs:['ML LAB','TRAINING SESSION','PROJ']} };
-                 const c = subs[s] || {theory:['Subject'], labs:['Lab']};
-                 return h <= 5 ? c.theory[h-1] : c.labs[h-6];
-               };
-               const sSem = student?.semester || 6;
-               if (hourMatch) {
-                  const h = parseInt(hourMatch[1]);
-                  const st = record.hours.find(hr => hr.hour === h);
-                  responseText = `On ${targetDate}, Hour ${h} (${getSub(h, sSem)}) was **${st?.status || 'N/A'}**.`;
-               } else {
-                  const breakdown = record.hours.map(h => `• H${h.hour} (${getSub(h.hour, sSem)}): ${h.status === 'Present' ? '✅' : '❌'}`).join('\n');
-                  responseText = `📅 **Analysis: ${targetDate}**\n\n${breakdown}\n\nPresent for **${record.hours.filter(h => h.status === 'Present').length}/8** periods.`;
-               }
+              const student = await Models.Student.findOne({ regNumber }).lean();
+              const getSub = (h, s) => {
+                const subs = { 1: { theory: ['Math-I', 'English', 'Physics', 'Programming', 'Discrete'], labs: ['MATH', 'ENG', 'PHY'] }, 6: { theory: ['ML', 'Big Data', 'Cloud', 'Cyber', 'Training Session'], labs: ['ML LAB', 'TRAINING SESSION', 'PROJ'] } };
+                const c = subs[s] || { theory: ['Subject'], labs: ['Lab'] };
+                return h <= 5 ? c.theory[h - 1] : c.labs[h - 6];
+              };
+              const sSem = student?.semester || 6;
+              if (hourMatch) {
+                const h = parseInt(hourMatch[1]);
+                const st = record.hours.find(hr => hr.hour === h);
+                responseText = `On ${targetDate}, Hour ${h} (${getSub(h, sSem)}) was **${st?.status || 'N/A'}**.`;
+              } else {
+                const breakdown = record.hours.map(h => `• H${h.hour} (${getSub(h.hour, sSem)}): ${h.status === 'Present' ? '✅' : '❌'}`).join('\n');
+                responseText = `📅 **Analysis: ${targetDate}**\n\n${breakdown}\n\nPresent for **${record.hours.filter(h => h.status === 'Present').length}/8** periods.`;
+              }
             } else { responseText = `No records for ${targetDate}. Might be a holiday.`; }
           }
         } else { responseText = t.noAttendance; }
@@ -591,16 +608,16 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         const modNum = isModule2 ? 2 : 1;
         const semData = (intra.semesters || []).find(s => s.semester === (targetSemester || 6));
         const targetExams = semData?.exams || [];
-        
+
         let subIndex = -1;
         let finalSubName = "Subject";
-        const subjectsMap = { 
-          'machine learning': 'MACHINE LEARNING', ml: 'MACHINE LEARNING', 
-          'big data': 'BIG DATA', cloud: 'CLOUD COMPUTING', 
+        const subjectsMap = {
+          'machine learning': 'MACHINE LEARNING', ml: 'MACHINE LEARNING',
+          'big data': 'BIG DATA', cloud: 'CLOUD COMPUTING',
           'cyber security': 'CYBER SECURITY', cyber: 'CYBER SECURITY',
-          devops: 'DEVOPS', training: 'DEVOPS' 
+          devops: 'DEVOPS', training: 'DEVOPS'
         };
-        
+
         // Find subject index in the semester's subject list
         for (const [key, val] of Object.entries(subjectsMap)) {
           if (lower.includes(key)) {
@@ -675,7 +692,7 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
       try {
         const { GoogleGenerativeAI } = require("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        
+
         // Fetch all data for Gemini fallback (context heavy) - ONLY when needed
         const [student, attendance, acStatus, perf, financials] = await Promise.all([
           Models.Student.findOne({ regNumber }).lean(),
@@ -688,13 +705,13 @@ app.post('/api/v1/chatbot/query', authenticateToken, async (req, res) => {
         let context = "You are a helpful Academic Assistant. Use the following student data safely to answer the parent. ";
         if (student) {
           context += `Student: ${student.name}, ID: ${student.regNumber}, Branch: ${student.branch}, Current Sem: ${student.semester}. `;
-          if (attendance) context += `Overall Attendance: ${attendance.overallPercentage}%, Sem-wise: ${(attendance.semesterWise||[]).map(s=>`S${s.semester}:${s.attendance}%`).join(',')}. `;
-          if (perf) context += `CGPA: ${perf.currentCGPA}, SGPA-History: ${(perf.semesterWiseCGPA||[]).map(s=>`S${s.semester}:${s.sgpa}`).join(',')}. `;
+          if (attendance) context += `Overall Attendance: ${attendance.overallPercentage}%, Sem-wise: ${(attendance.semesterWise || []).map(s => `S${s.semester}:${s.attendance}%`).join(',')}. `;
+          if (perf) context += `CGPA: ${perf.currentCGPA}, SGPA-History: ${(perf.semesterWiseCGPA || []).map(s => `S${s.semester}:${s.sgpa}`).join(',')}. `;
           if (financials) {
             const feeBreakdown = (financials.semesterWiseFees || []).map(f => `Sem ${f.semester}: Total ₹${f.total}, Paid ₹${f.paid}, Due ₹${f.pending}, Status: ${f.status}`).join('; ');
             context += `Finance: Pending Fees Total ₹${financials.pendingFees}. Breakdown: ${feeBreakdown}. Status: ${financials.feePaymentStatus}, Scholarship: ${financials.scholarshipStatus || 'N/A'}. `;
           }
-          if (acStatus) context += `Backlogs: ${acStatus.numberOfBacklogs} in ${acStatus.backlogSubjects?.map(s=>s.subjectName).join(', ') || 'None'}. `;
+          if (acStatus) context += `Backlogs: ${acStatus.numberOfBacklogs} in ${acStatus.backlogSubjects?.map(s => s.subjectName).join(', ') || 'None'}. `;
         }
 
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
@@ -804,7 +821,7 @@ app.get('/api/v1/admin/analytics', authenticateAdmin, async (req, res) => {
     ]);
 
     const totalPendingFees = financialData.reduce((sum, f) => sum + (f.pendingFees || 0), 0);
-    
+
     const atRiskRegs = new Set([
       ...lowAttendance.map(a => a.regNumber),
       ...lowCGPA.map(p => p.regNumber),
@@ -907,8 +924,8 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
       // Improved extraction: Filter out common stop words
       const stopWords = ['i', 'want', 'the', 'parent', 'details', 'of', 'show', 'me', 'info', 'for', 'guardian', 'father', 'mother', 'about'];
       const words = lower.split(' ');
-      const searchTerms = words.filter(w => !stopWords.includes(w) && w.length >= 3); 
-      
+      const searchTerms = words.filter(w => !stopWords.includes(w) && w.length >= 3);
+
       const query = searchTerms.length > 0 ? {
         $or: [
           { name: new RegExp(searchTerms.join('|'), 'i') },
@@ -927,11 +944,11 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
     else if (lower.includes('average performance') || lower.includes('average cgpa') || lower.includes('average sgpa') || (lower.includes('semester') && lower.includes('report'))) {
       const semMatch = lower.match(/(?:sem|semester)\s*(\d)/i);
       const targetSem = semMatch ? parseInt(semMatch[1], 10) : null;
-      
+
       const performances = await Models.AcademicPerformance.find().lean();
       let total = 0;
       let count = 0;
-      
+
       performances.forEach(p => {
         if (targetSem) {
           const sem = (p.semesterWiseCGPA || []).find(s => s.semester === targetSem);
@@ -946,7 +963,7 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
           }
         }
       });
-      
+
       if (count > 0) {
         const avg = (total / count).toFixed(2);
         responseText = `The average ${targetSem ? `Semester ${targetSem} SGPA` : 'CGPA'} across all students is **${avg}**. (Calculated from ${count} active records)`;
@@ -957,11 +974,11 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
     else if (lower.includes('average attendance')) {
       const semMatch = lower.match(/(?:sem|semester)\s*(\d)/i);
       const targetSem = semMatch ? parseInt(semMatch[1], 10) : null;
-      
+
       const attendance = await Models.Attendance.find().lean();
       let total = 0;
       let count = 0;
-      
+
       attendance.forEach(a => {
         if (targetSem) {
           const sem = (a.semesterWise || []).find(s => s.semester === targetSem);
@@ -976,7 +993,7 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
           }
         }
       });
-      
+
       if (count > 0) {
         const avg = (total / count).toFixed(2);
         responseText = `The average ${targetSem ? `Semester ${targetSem}` : 'overall'} attendance across all students is **${avg}%**. (Calculated from ${count} student logs)`;
@@ -987,20 +1004,20 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
     else if (lower.includes('top performing') || lower.includes('top 10') || lower.includes('top students')) {
       const semMatch = lower.match(/(?:sem|semester)\s*(\d)/i);
       const targetSem = semMatch ? parseInt(semMatch[1], 10) : null;
-      
+
       const performances = await Models.AcademicPerformance.find().lean();
       let list = performances.map(p => {
         let score = targetSem ? (p.semesterWiseCGPA.find(s => s.semester === targetSem)?.sgpa || 0) : p.currentCGPA;
         return { regNumber: p.regNumber, score };
       }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
-      
+
       const regNumbers = list.map(l => l.regNumber);
       const students = await Models.Student.find({ regNumber: { $in: regNumbers } });
       const responseList = list.map((l, i) => {
         const s = students.find(st => st.regNumber === l.regNumber);
-        return `${i+1}. **${s?.name || l.regNumber}** - ${l.score} ${targetSem ? 'SGPA' : 'CGPA'}`;
+        return `${i + 1}. **${s?.name || l.regNumber}** - ${l.score} ${targetSem ? 'SGPA' : 'CGPA'}`;
       }).join('\n');
-      
+
       responseText = `🏆 **Top 10 Students ${targetSem ? `(Semester ${targetSem})` : '(Overall)'}**:\n\n${responseList || 'No performance data found.'}`;
     }
     else if (lower.includes('at risk') || lower.includes('at-risk')) {
@@ -1009,13 +1026,13 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
         Models.AcademicPerformance.find({ currentCGPA: { $lt: 6.0 } }).lean(),
         Models.AcademicStatus.find({ numberOfBacklogs: { $gt: 2 } }).lean()
       ]);
-      
+
       const atRiskRegs = new Set([
         ...lowAttendance.map(a => a.regNumber),
         ...lowCGPA.map(p => p.regNumber),
         ...manyBacklogs.map(s => s.regNumber)
       ]);
-      
+
       const students = await Models.Student.find({ regNumber: { $in: Array.from(atRiskRegs) } });
       const list = students.map(s => {
         const att = lowAttendance.find(a => a.regNumber === s.regNumber);
@@ -1027,14 +1044,14 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
         if (logs) reasons.push(`${logs.numberOfBacklogs} Backlogs`);
         return `• **${s.name}** (${s.regNumber}) - ${reasons.join(', ')}`;
       }).join('\n');
-      
+
       responseText = `⚠️ **Critical Analysis: Students At Risk**\n\n${list || 'All students currently maintain satisfactory academic standing.'}`;
     }
     else if (lower.includes('profile') || lower.includes('details') || lower.includes('info') || lower.includes('report for')) {
       const stopWords = ['show', 'me', 'the', 'complete', 'profile', 'of', 'full', 'details', 'for', 'get', 'info', 'information', 'report'];
       const words = lower.replace(/[?.!,]/g, '').split(/\s+/);
       const searchTerms = words.filter(w => !stopWords.includes(w) && w.length >= 3);
-      
+
       if (searchTerms.length > 0) {
         const query = {
           $or: [
@@ -1092,7 +1109,7 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
       const stopWords = ['what', 'is', 'the', 'attendance', 'of', 'for', 'show', 'me'];
       const words = lower.split(' ');
       const searchTerms = words.filter(w => !stopWords.includes(w) && w.length >= 3);
-      
+
       const student = await Models.Student.findOne({
         $or: [
           { name: new RegExp(searchTerms.join('|'), 'i') },
@@ -1112,7 +1129,7 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
       try {
         const { GoogleGenerativeAI } = require("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        
+
         const [students, attendance, financial] = await Promise.all([
           Models.Student.find().limit(50).lean(), // Increased sample
           Models.Attendance.find().lean(),
@@ -1124,7 +1141,7 @@ app.post('/api/v1/admin/chatbot/query', authenticateAdmin, async (req, res) => {
 
         const context = `You are the Administrative Command AI for a college management system. 
         System Stats: Total Students: ${students.length}, Avg Attendance: ${avgAttendance}%, Total Pending Fees: ₹${totalPending}.
-        Student Records (Subset): ${JSON.stringify(students.map(s => ({name: s.name, reg: s.regNumber, branch: s.branch, att: s.attendance, cgpa: s.cgpa, backlogs: s.backlogs})))}.
+        Student Records (Subset): ${JSON.stringify(students.map(s => ({ name: s.name, reg: s.regNumber, branch: s.branch, att: s.attendance, cgpa: s.cgpa, backlogs: s.backlogs })))}.
         Answer administrative questions professionally. If asked about a student in the list, use that data.`;
 
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });

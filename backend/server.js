@@ -180,79 +180,80 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
 
     if (!student) return res.status(404).json({ error: 'Number mismatch. Try again.' });
 
-    let responseMsg = 'Verification successful. Proceed with Firebase SMS.';
-    let generatedOtp = null;
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log(`[OTP DEBUG] Generated OTP for ${regNumber}: ${generatedOtp}`);
+    const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
+    otpCache.set(cacheKey, generatedOtp);
 
-    if (!isFirebaseInitialized) {
-      // In simulation mode, generate a mock OTP
-      generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      console.log(`[FIREBASE SIMULATION OTP] Generated OTP for ${regNumber}: ${generatedOtp}`);
-      
-      const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
-      otpCache.set(cacheKey, generatedOtp);
-      responseMsg = `[SIMULATION] Verification successful. OTP is ${generatedOtp}`;
+    // 1. Send SMS via Fast2SMS (with Twilio as secondary option)
+    const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+    const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+    const fast2smsKey = process.env.FAST2SMS_API_KEY;
+
+    const smsMessage = `Your secure login OTP for the Academic Monitoring System is: ${generatedOtp}. Valid for 5 minutes.`;
+
+    if (fast2smsKey) {
+      try {
+        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
+          params: {
+            authorization: fast2smsKey,
+            variables_values: generatedOtp,
+            route: 'otp',
+            numbers: student.phone
+          }
+        });
+        console.log(`[SMS] Fast2SMS sent successfully to ${student.phone}`);
+      } catch (smsErr) {
+        console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
+      }
+    } else if (twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
+      try {
+        await sendSMS(student.phone, smsMessage);
+      } catch (smsErr) {
+        console.error('Twilio SMS sending error:', smsErr);
+      }
+    } else {
+      console.log(`[SMS SIMULATION] To: ${student.phone}, Msg: ${smsMessage}`);
+    }
+
+    // 2. Send Email via Nodemailer
+    if (student.email) {
+      sendEmailNotification(
+        student.email,
+        'Your Secure Login OTP',
+        `Hello ${student.name},\n\nYour one-time password (OTP) for the Academic Monitoring System is: ${generatedOtp}\n\nThis OTP is valid for 5 minutes.\n\nRegards,\nSecurity Team`
+      ).catch(err => console.error('Email failed in background:', err));
     }
 
     res.json({
       success: true,
-      message: responseMsg,
-      firebaseSimulated: !isFirebaseInitialized,
-      simulatedOtp: !isFirebaseInitialized ? generatedOtp : undefined
+      message: `OTP sent successfully to registered number and email.`
     });
 
   } catch (err) {
-    res.status(500).json({ error: 'Server error during phone verification' });
+    res.status(500).json({ error: 'Server error generating OTP' });
   }
 });
 
 app.post('/api/v1/auth/verify-otp', async (req, res) => {
-  const { regNumber, parentPhone, otp, idToken } = req.body;
+  const { regNumber, parentPhone, otp } = req.body;
   try {
     const cleanPhone = parentPhone.replace(/\s/g, '').trim();
     const cleanReg = regNumber.trim().toLowerCase();
+    const cacheKey = `${cleanReg}_${cleanPhone}`;
+    const storedOtp = otpCache.get(cacheKey);
+
+    if (!storedOtp) return res.status(401).json({ error: 'OTP expired or not found.' });
+    if (storedOtp !== otp.trim()) return res.status(401).json({ error: 'Incorrect OTP.' });
+
+    otpCache.del(cacheKey);
     const student = await Models.Student.findOne({ regNumber: new RegExp('^' + regNumber.trim() + '$', 'i'), phone: cleanPhone });
     if (!student) return res.status(404).json({ error: 'Session expired or mismatch.' });
 
-    if (idToken) {
-      // Real Firebase Verification
-      if (!isFirebaseInitialized) {
-        return res.status(400).json({ error: 'Firebase Admin not configured on server.' });
-      }
-      
-      try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const verifiedPhone = decodedToken.phone_number; // e.g. "+918709870656"
-        
-        // Normalize and compare
-        const cleanVerified = verifiedPhone.replace(/^\+91/, '').replace(/^\+1/, '').replace(/\s+/g, '');
-        const cleanStudent = student.phone.replace(/^\+91/, '').replace(/^\+1/, '').replace(/\s+/g, '');
-        
-        if (cleanVerified !== cleanStudent) {
-          return res.status(401).json({ error: 'Verified phone number does not match registered phone.' });
-        }
-      } catch (firebaseErr) {
-        console.error('Firebase Token Verification Failed:', firebaseErr);
-        return res.status(401).json({ error: 'Invalid or expired Firebase verification code.' });
-      }
-    } else if (otp) {
-      // Simulated local OTP Verification
-      const cacheKey = `${cleanReg}_${cleanPhone}`;
-      const storedOtp = otpCache.get(cacheKey);
-
-      if (!storedOtp) return res.status(401).json({ error: 'OTP expired or not found.' });
-      if (storedOtp !== otp.trim()) return res.status(401).json({ error: 'Incorrect OTP.' });
-
-      otpCache.del(cacheKey);
-    } else {
-      return res.status(400).json({ error: 'Verification code or token required.' });
-    }
-
     const token = signStudentToken(student.regNumber);
     res.json({ message: 'Login successful', token, student: { regNumber: student.regNumber, name: student.name, branch: student.branch, semester: student.semester, phone: student.phone } });
-  } catch (err) { 
-    console.error('Verify OTP error:', err);
-    res.status(500).json({ error: 'Server error' }); 
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // --- STUDENT DATA ENDPOINTS ---

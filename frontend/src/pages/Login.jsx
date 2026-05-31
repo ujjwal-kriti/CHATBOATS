@@ -11,8 +11,6 @@ import {
   ChevronLeft
 } from 'lucide-react'
 import axios from 'axios'
-import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth'
-import { auth } from '../firebase'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -22,8 +20,6 @@ export default function Login() {
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [confirmationResult, setConfirmationResult] = useState(null)
-  const [firebaseSimulated, setFirebaseSimulated] = useState(true)
 
   const handleVerifyReg = async (e) => {
     e.preventDefault()
@@ -39,55 +35,15 @@ export default function Login() {
     }
   }
 
-  const setupRecaptcha = () => {
-    if (window.recaptchaVerifier) return;
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-      size: 'invisible',
-      callback: (response) => {},
-      'expired-callback': () => {}
-    });
-  }
-
   const handleVerifyPhone = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
       const res = await axios.post('/api/v1/auth/verify-phone', { regNumber, parentPhone })
-      const isSimulated = res.data.firebaseSimulated
-      setFirebaseSimulated(isSimulated)
-
-      if (isSimulated) {
-        if (res.data.simulatedOtp) {
-          console.log(`[SIMULATION] OTP generated: ${res.data.simulatedOtp}`);
-        }
-        setStep(3)
-      } else {
-        // Real Firebase Phone Auth
-        setupRecaptcha();
-        let formattedPhone = parentPhone.replace(/\s+/g, '');
-        if (!formattedPhone.startsWith('+')) {
-          if (formattedPhone.length === 10) {
-            formattedPhone = `+91${formattedPhone}`; // Standard Indian prefix
-          } else {
-            formattedPhone = `+${formattedPhone}`;
-          }
-        }
-        
-        const appVerifier = window.recaptchaVerifier;
-        const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-        setConfirmationResult(confirmation);
-        setStep(3);
-      }
+      if (res.data.success) setStep(3)
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || err.message || 'Phone verification failed');
-      if (window.recaptchaVerifier) {
-        try {
-          window.recaptchaVerifier.clear();
-        } catch (e) {}
-        window.recaptchaVerifier = null;
-      }
+      setError(err.response?.data?.error || 'Phone number mismatch')
     } finally {
       setLoading(false)
     }
@@ -98,23 +54,12 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      let res;
-      if (firebaseSimulated) {
-        res = await axios.post('/api/v1/auth/verify-otp', { regNumber, parentPhone, otp })
-      } else {
-        if (!confirmationResult) {
-          throw new Error('Verification session lost. Please request OTP again.');
-        }
-        const userCredential = await confirmationResult.confirm(otp);
-        const idToken = await userCredential.user.getIdToken();
-        res = await axios.post('/api/v1/auth/verify-otp', { regNumber, parentPhone, idToken });
-      }
+      const res = await axios.post('/api/v1/auth/verify-otp', { regNumber, parentPhone, otp })
       localStorage.setItem('token', res.data.token)
       localStorage.setItem('auth', JSON.stringify(res.data.student))
       navigate('/dashboard')
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || err.message || 'Incorrect OTP');
+      setError(err.response?.data?.error || 'Incorrect OTP')
     } finally {
       setLoading(false)
     }
@@ -177,7 +122,7 @@ export default function Login() {
             </div>
           )}
 
-          <div id="recaptcha-container"></div>
+
 
           {/* STEP 1: Registration */}
           {step === 1 && (
@@ -243,11 +188,7 @@ export default function Login() {
                 <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center mx-auto mb-4 border border-emerald-400/30">
                   <CheckCircle2 size={24} />
                 </div>
-                <p className="text-sm text-white/80 font-medium drop-shadow">
-                  {firebaseSimulated 
-                    ? "Verification code generated in simulation mode" 
-                    : "Verification code sent to registered number via Firebase SMS"}
-                </p>
+                <p className="text-sm text-white/80 font-medium drop-shadow">Verification code sent to registered number and email</p>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-black text-white/90 drop-shadow-md uppercase tracking-[0.2em] ml-1">Enter 6-Digit OTP</label>
@@ -271,11 +212,6 @@ export default function Login() {
               >
                 {loading ? <Loader2 className="animate-spin" /> : <>Secure Dashboard Access</>}
               </button>
-              {firebaseSimulated && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-200 font-medium leading-relaxed mt-4 text-center">
-                  💡 <strong>Simulation Mode</strong>: Enter the OTP code printed in the backend console or from response data.
-                </div>
-              )}
               <p className="text-center text-[10px] text-white/40 font-bold uppercase tracking-widest mt-6">
                 Authentication provided by Institutional Gateway
               </p>

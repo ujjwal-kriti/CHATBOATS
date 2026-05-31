@@ -8,7 +8,7 @@ async function test() {
       params: {
         authorization: fast2smsKey,
         route: 'q',
-        message: 'Your login verification code is 999999. Valid for 5 minutes.',
+        message: 'Akash Bandaru: 1234',
         numbers: '8688611404',
         language: 'english'
       }

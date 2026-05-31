@@ -198,12 +198,13 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
         await axios.get('https://www.fast2sms.com/dev/bulkV2', {
           params: {
             authorization: fast2smsKey,
-            variables_values: generatedOtp,
-            route: 'otp',
+            route: 'q',
+            message: smsMessage,
+            language: 'english',
             numbers: student.phone
           }
         });
-        console.log(`[SMS] Fast2SMS sent successfully to ${student.phone}`);
+        console.log(`[SMS] Fast2SMS Quick SMS sent successfully to ${student.phone}`);
       } catch (smsErr) {
         console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
       }

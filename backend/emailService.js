@@ -4,17 +4,13 @@ const nodemailer = require('nodemailer');
 // You can use Gmail, Outlook, or any SMTP service.
 // For Gmail, you might need to use an "App Password".
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
   port: 465,
   secure: true, 
-  family: 4, // Force IPv4 to avoid ENETUNREACH on IPv6
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  tls: {
-    rejectUnauthorized: false
-  }
 });
 
 /**
@@ -25,6 +21,7 @@ const transporter = nodemailer.createTransport({
  * @param {string} html - HTML body (optional)
  */
 async function sendEmailNotification(to, subject, text, html) {
+  console.log(`[EMAIL DEBUG] EMAIL_USER: ${process.env.EMAIL_USER ? 'SET' : 'NOT SET'}, EMAIL_PASS: ${process.env.EMAIL_PASS ? 'SET' : 'NOT SET'}`);
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.log(`\x1b[33m[EMAIL SIMULATION] To: ${to}\x1b[0m`);
     console.log(`\x1b[33mSubject: ${subject}\x1b[0m`);

@@ -185,38 +185,6 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
     const cacheKey = `${regNumber.trim().toLowerCase()}_${student.phone}`;
     otpCache.set(cacheKey, generatedOtp);
 
-    // 1. Send SMS via Fast2SMS (with Twilio as secondary option)
-    const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-    const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-    const fast2smsKey = process.env.FAST2SMS_API_KEY;
-
-    const smsMessage = `Your secure login code for the Academic Monitoring System is: ${generatedOtp}. Valid for 5 minutes.`;
-    if (fast2smsKey) {
-      try {
-        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
-          params: {
-            authorization: fast2smsKey,
-            route: 'q',
-            message: smsMessage,
-            numbers: student.phone,
-            language: 'english'
-          }
-        });
-        console.log(`[SMS] Fast2SMS Quick SMS sent successfully to ${student.phone}`);
-      } catch (smsErr) {
-        console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
-      }
-    } else if (twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
-      try {
-        await sendSMS(student.phone, smsMessage);
-      } catch (smsErr) {
-        console.error('Twilio SMS sending error:', smsErr);
-      }
-    } else {
-      console.log(`[SMS SIMULATION] To: ${student.phone}, Msg: ${smsMessage}`);
-    }
-
     // 2. Send Email via Nodemailer
     if (student.email) {
       sendEmailNotification(
@@ -228,7 +196,7 @@ app.post('/api/v1/auth/verify-phone', async (req, res) => {
 
     res.json({
       success: true,
-      message: `OTP sent successfully to registered number and email.`
+      message: `OTP sent successfully to registered email.`
     });
 
   } catch (err) {
